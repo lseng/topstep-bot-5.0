@@ -1,4 +1,5 @@
 {
+  "model": "opus",
   "permissions": {
     "allow": [
       "Bash(mkdir:*)",
@@ -8,11 +9,16 @@
       "Bash(grep:*)",
       "Bash(ls:*)",
       "Bash(cp:*)",
+      "Bash(rm:*)",
       "Write",
       "Bash(chmod:*)",
       "Bash(touch:*)",
       "Bash(npx:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(uv:*)",
+      "Bash(vercel:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

@@ -24,8 +24,16 @@ Thumbs.db
 *.log
 agents/loop_logs/
 
+# ADW (AI Developer Workflow)
+trees/
+agents/*/
+adws/__pycache__/
+adws/adw_modules/__pycache__/
+adws/.env
+
 # Test coverage
 coverage/
 
 # TypeScript cache
 *.tsbuildinfo
+.vercel

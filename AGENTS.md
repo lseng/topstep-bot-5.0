@@ -7,6 +7,26 @@
 
 TypeScript/Node.js webhook server that receives TradingView alerts and executes trades on TopstepX via the ProjectX Gateway API. Deployed to Vercel as serverless functions.
 
+## Development Workflows
+
+### Ralph Loop (Specification-Driven)
+```bash
+./ralph/loop.sh plan [max_iterations]  # Generate/update IMPLEMENTATION_PLAN.md
+./ralph/loop.sh build [max_iterations] # Implement from plan, commit after each task
+```
+
+### ADW (GitHub Issue-Driven)
+```bash
+uv run adws/adw_ralph_iso.py <issue-number> [adw-id] [options]
+# Options:
+#   --plan-iterations N   # Planning iterations (default: 3)
+#   --build-iterations N  # Build iterations (default: 10)
+#   --skip-tests          # Skip test phase
+#   --skip-review         # Skip review phase
+```
+
+ADW Pipeline: Issue → Spec → Plan → Build → Test → Review → PR → Merge
+
 ## Build & Validate Commands
 
 ```bash

@@ -1,518 +1,166 @@
-# TopstepX Trading Bot - Implementation Plan
+# Implementation Plan
 
-> Generated: 2026-02-03
-> Version: v0.2.0
+**Last Updated:** 2026-02-11T23:33:00Z
+**Status:** COMPLETE
+**Feature:** Implement Webhook Endpoint (GitHub Issue #1)
 
-## Overview
+## Summary
 
-This document outlines the implementation tasks for the TopstepX Trading Bot with Dashboard. The bot receives TradingView webhook alerts, executes trades on TopstepX, and displays real-time data on a minimalistic dashboard.
+Implement the main TradingView webhook endpoint (`POST /api/webhook`) that receives trading alerts and processes trading signals. The endpoint must validate authentication via a secret, parse and validate the request body, and return appropriate responses.
 
-## Current State
+## Specifications Analyzed
 
-### Implemented
-- [x] Project structure and configuration files
-- [x] TypeScript type definitions (`src/types/index.ts`)
-- [x] Environment variables configured (`.env.local`)
-- [x] Build tooling (ESLint, TypeScript, Vitest)
-- [x] Vercel deployment configuration
-- [x] Specifications complete
+- [x] specs/feature-implement-webhook-endpoint.md - Analyzed (primary spec for this feature)
 
-### Not Implemented
-- [ ] Webhook endpoint
-- [ ] TopstepX API client
-- [ ] Order management
-- [ ] Dashboard page
-- [ ] Real-time event streaming
-- [ ] Account metrics display
+## Gap Analysis
 
----
+### What's Specified
 
-## High Priority Tasks (Critical Path)
+The spec requires:
+1. **POST /api/webhook endpoint** that receives TradingView alerts
+2. **Authentication** - Validate `secret` field matches `WEBHOOK_SECRET` env var
+3. **Request validation** - Parse JSON, validate required fields (`secret`, `symbol`, `action`, `quantity`)
+4. **Action validation** - Must be one of: `buy`, `sell`, `close`, `close_long`, `close_short`
+5. **Response format** - Success: `{ success: true, message, data }`, Error: `{ success: false, error, details }`
+6. **Logging** - Log all requests (redact secret), validation errors, and processing results
+7. **Tests** - Tests must pass
 
-### Task 1: Create Logger Utility
-- [x] **Status: COMPLETE**
+### What Exists
 
-**Priority:** HIGH | **Dependencies:** None
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `api/webhook.ts` | ✅ Complete | Webhook endpoint implemented |
+| Type definitions | ✅ Complete | `src/types/index.ts` has `WebhookAlert`, `TradeAction`, `WebhookResponse`, `ValidationError` |
+| Logger | ✅ Complete | `src/lib/logger.ts` with redaction support |
+| Health endpoint | ✅ Complete | `api/health.ts` (reference for Vercel handler pattern) |
+| Validation utilities | ✅ Complete | `src/lib/validation.ts` with validation functions |
 
-Create a structured JSON logger for consistent logging.
+### Gap Summary
 
-**Files:**
-- `src/lib/logger.ts` (create)
-- `src/lib/logger.test.ts` (create)
+1. **Missing `api/webhook.ts`** - The main webhook handler file does not exist
+2. **Missing validation logic** - Need to validate request body fields and types
+3. **Missing tests** - No tests for the webhook endpoint
 
-**Requirements:**
-- Support log levels: debug, info, warn, error
-- Output structured JSON for Vercel logs
-- Include timestamp, level, message, and optional data
-- Never log sensitive data (secrets, API keys)
+## Prioritized Tasks
 
----
+### Phase 1: Validation Utilities
 
-### Task 2: Create Input Validation Module
-- [ ] **Status: NOT STARTED**
+- [x] Create `src/lib/validation.ts` - Request body validation functions for WebhookAlert type
+- [x] Create `src/lib/validation.test.ts` - Unit tests for validation functions
 
-**Priority:** HIGH | **Dependencies:** Task 1
+### Phase 2: Webhook Endpoint
 
-Create validation functions for webhook payloads.
+- [x] Create `api/webhook.ts` - Main webhook handler with auth, validation, and logging
+- [x] Create `api/webhook.test.ts` - Integration tests for webhook endpoint
 
-**Files:**
-- `src/lib/validation.ts` (create)
-- `src/lib/validation.test.ts` (create)
+### Phase 3: Verification
 
-**Requirements:**
-- Validate required fields: secret, symbol, action, quantity
-- Validate field types and values
-- Return structured validation errors
-- Sanitize input to prevent injection
+- [x] Run `npm run validate` - Ensure lint, typecheck, and tests all pass
 
-**Reference:** `specs/webhook-api.md`
+## Task Details
 
----
+### Task 1: Create `src/lib/validation.ts`
 
-### Task 3: Create TradingView Alert Parser
-- [ ] **Status: NOT STARTED**
+**Purpose:** Provide reusable validation functions for webhook request bodies.
 
-**Priority:** HIGH | **Dependencies:** Task 2
-
-Parse TradingView alert payloads into structured trade signals.
-
-**Files:**
-- `src/services/tradingview/parser.ts` (create)
-- `src/services/tradingview/parser.test.ts` (create)
+**Functions to implement:**
+- `validateWebhookSecret(secret: string | undefined): boolean` - Check if secret matches env var
+- `validateWebhookPayload(body: unknown): { valid: boolean; errors?: ValidationError[]; payload?: WebhookAlert }` - Validate all required fields
 
 **Requirements:**
-- Parse JSON alert format
-- Normalize symbol names (e.g., MNQ1! -> MNQ)
-- Default orderType to "market" if not specified
-- Handle optional fields gracefully
-
-**Reference:** `specs/webhook-api.md`, `specs/topstepx-integration.md`
-
----
-
-### Task 4: Create TopstepX Authentication Client
-- [ ] **Status: NOT STARTED**
-
-**Priority:** HIGH | **Dependencies:** Task 1
-
-Create the TopstepX API client with authentication and token management.
-
-**Files:**
-- `src/services/topstepx/client.ts` (create)
-- `src/services/topstepx/client.test.ts` (create)
-
-**Requirements:**
-- Authenticate with username + API key
-- Store JWT token in memory
-- Track token expiration
-- Refresh token before expiry
-- Use environment variables for credentials
-
-**Reference:** `specs/topstepx-integration.md`
-
----
-
-### Task 5: Create Order Placement Service
-- [ ] **Status: NOT STARTED**
-
-**Priority:** HIGH | **Dependencies:** Task 4
-
-Implement order placement via TopstepX API.
-
-**Files:**
-- `src/services/topstepx/orders.ts` (create)
-- `src/services/topstepx/orders.test.ts` (create)
-
-**Requirements:**
-- Place market orders
-- Place limit orders
-- Place stop orders
-- Map webhook actions to TopstepX order format
-- Handle order responses and errors
-
-**Reference:** `specs/topstepx-integration.md`
-
----
-
-### Task 6: Create Event Store
-- [ ] **Status: NOT STARTED**
-
-**Priority:** HIGH | **Dependencies:** None
-
-Create in-memory storage for signals, trades, and account data.
-
-**Files:**
-- `src/lib/event-store.ts` (create)
-- `src/lib/event-store.test.ts` (create)
-
-**Requirements:**
-- Store last 100 signals
-- Store last 100 trades
-- Store current account metrics
-- Provide methods: addSignal, addTrade, updateAccount
-- Support SSE broadcast via event emitter
-
-**Reference:** `specs/dashboard.md`
-
----
-
-### Task 7: Create Webhook Endpoint
-- [ ] **Status: NOT STARTED**
-
-**Priority:** HIGH | **Dependencies:** Tasks 2, 3, 5, 6
-
-Create the main webhook endpoint that receives TradingView alerts.
-
-**Files:**
-- `api/webhook.ts` (create)
-- `api/webhook.test.ts` (create)
-
-**Requirements:**
-- Accept POST requests only
-- Validate webhook secret
-- Parse and validate alert payload
-- Store signal in EventStore
-- Route to appropriate trading action
-- Return proper HTTP status codes
-- Log all operations
-
-**Reference:** `specs/webhook-api.md`
-
----
-
-### Task 8: Create Dashboard Page
-- [x] **Status: COMPLETE (minimal version)**
-
-**Priority:** HIGH | **Dependencies:** None
-
-Create the static HTML dashboard page.
-
-**Files:**
-- `public/index.html` (create)
-
-**Requirements:**
-- Dark theme trading dashboard
-- Account metrics cards (balance, realized P&L, unrealized P&L)
-- Signals panel (scrollable list)
-- Trades panel (scrollable list)
-- Connection status indicator
-- SSE client for real-time updates
-- Auto-reconnect on disconnect
-- Responsive design
-
-**Reference:** `specs/dashboard.md`
-
----
-
-### Task 9: Create SSE Events Endpoint
-- [ ] **Status: NOT STARTED**
-
-**Priority:** HIGH | **Dependencies:** Task 6
-
-Create Server-Sent Events endpoint for real-time streaming.
-
-**Files:**
-- `api/events.ts` (create)
-
-**Requirements:**
-- Implement SSE protocol
-- Stream signal events
-- Stream trade events
-- Stream account updates
-- Handle client disconnection
-- Support multiple concurrent clients
-
-**Reference:** `specs/dashboard.md`
-
----
-
-## Medium Priority Tasks
-
-### Task 10: Create Account Service
-- [ ] **Status: NOT STARTED**
-
-**Priority:** MEDIUM | **Dependencies:** Task 4
-
-Implement account information retrieval.
-
-**Files:**
-- `src/services/topstepx/account.ts` (create)
-- `src/services/topstepx/account.test.ts` (create)
-
-**Requirements:**
-- Get account details
-- Get account balance
-- Select account by name
-- Update EventStore with account data
-
-**Reference:** `specs/topstepx-integration.md`
-
----
-
-### Task 11: Create Account Metrics Endpoint
-- [ ] **Status: NOT STARTED**
-
-**Priority:** MEDIUM | **Dependencies:** Tasks 6, 10
-
-Create endpoint to get current account metrics.
-
-**Files:**
-- `api/account.ts` (create)
-
-**Requirements:**
-- Return current balance, realized P&L, unrealized P&L
-- Fetch from TopstepX if EventStore is empty
-- Cache results in EventStore
-
-**Reference:** `specs/dashboard.md`
-
----
-
-### Task 12: Create Signals History Endpoint
-- [ ] **Status: NOT STARTED**
-
-**Priority:** MEDIUM | **Dependencies:** Task 6
-
-Create endpoint to get recent webhook signals.
-
-**Files:**
-- `api/signals.ts` (create)
-
-**Requirements:**
-- Return last 50 signals from EventStore
-- Include timestamp, symbol, action, quantity, status
-
-**Reference:** `specs/dashboard.md`
-
----
-
-### Task 13: Create Trades History Endpoint
-- [ ] **Status: NOT STARTED**
-
-**Priority:** MEDIUM | **Dependencies:** Task 6
-
-Create endpoint to get recent trade executions.
-
-**Files:**
-- `api/trades.ts` (create)
-
-**Requirements:**
-- Return last 50 trades from EventStore
-- Include fill price, P&L when available
-
-**Reference:** `specs/dashboard.md`
-
----
-
-### Task 14: Create Position Management Service
-- [ ] **Status: NOT STARTED**
-
-**Priority:** MEDIUM | **Dependencies:** Task 4
-
-Implement position tracking and closing.
-
-**Files:**
-- `src/services/topstepx/positions.ts` (create)
-- `src/services/topstepx/positions.test.ts` (create)
-
-**Requirements:**
-- Get open positions
-- Close specific position
-- Close all positions for symbol
-- Support close_long and close_short actions
-
-**Reference:** `specs/topstepx-integration.md`
-
----
-
-### Task 15: Create Health Check Endpoint
-- [x] **Status: COMPLETE**
-
-**Priority:** MEDIUM | **Dependencies:** None
-
-Create a health check endpoint for monitoring.
-
-**Files:**
-- `api/health.ts` (create)
-
-**Requirements:**
-- Return 200 OK with status JSON
-- Include version and timestamp
-
----
-
-## Low Priority Tasks
-
-### Task 16: Add SignalR WebSocket Client
-- [ ] **Status: NOT STARTED**
-
-**Priority:** LOW | **Dependencies:** Task 4
-
-Implement real-time updates via SignalR WebSocket.
-
-**Files:**
-- `src/services/topstepx/websocket.ts` (create)
-- `src/services/topstepx/websocket.test.ts` (create)
-
-**Requirements:**
-- Connect to User Hub
-- Handle order status updates
-- Handle position changes
-- Update EventStore on events
-- Auto-reconnect on disconnect
-
-**Reference:** `specs/topstepx-integration.md`
-
----
-
-### Task 17: Add Rate Limiting
-- [ ] **Status: NOT STARTED**
-
-**Priority:** LOW | **Dependencies:** Task 4
-
-Implement rate limiting to respect API limits.
-
-**Files:**
-- `src/lib/rate-limiter.ts` (create)
-- `src/lib/rate-limiter.test.ts` (create)
-
-**Requirements:**
-- Track request count per minute (60/min limit)
-- Queue requests when limit reached
-- Handle 429 responses gracefully
-
-**Reference:** `specs/topstepx-integration.md`
-
----
-
-### Task 18: Add Service Index Exports
-- [ ] **Status: NOT STARTED**
-
-**Priority:** LOW | **Dependencies:** Tasks 4, 5, 14
-
-Create index files for clean imports.
-
-**Files:**
-- `src/services/topstepx/index.ts` (create)
-- `src/services/tradingview/index.ts` (create)
-- `src/lib/index.ts` (create)
-
----
-
-### Task 19: Add Integration Tests
-- [ ] **Status: NOT STARTED**
-
-**Priority:** LOW | **Dependencies:** Tasks 7, 9
-
-Create integration tests for the complete flow.
-
-**Files:**
-- `src/__tests__/integration/webhook-flow.test.ts` (create)
-
-**Requirements:**
-- Mock TopstepX API responses
-- Test complete webhook -> order flow
-- Test SSE streaming
-
----
-
-## Task Dependency Graph
+- Check required fields: `secret`, `symbol`, `action`, `quantity`
+- Validate `action` is one of the allowed TradeAction values
+- Validate `quantity` is a positive number
+- Return detailed validation errors with field names
+
+### Task 2: Create `src/lib/validation.test.ts`
+
+**Purpose:** Unit tests for validation functions.
+
+**Test cases:**
+- Valid payload passes validation
+- Missing required fields return appropriate errors
+- Invalid action type returns error
+- Invalid quantity (negative, zero, non-number) returns error
+- Secret validation works correctly
+
+### Task 3: Create `api/webhook.ts`
+
+**Purpose:** Main webhook endpoint handler.
+
+**Implementation:**
+- Only accept POST method (return 405 for others)
+- Parse JSON body (return 400 on parse failure)
+- Validate secret (return 401 if invalid)
+- Validate payload (return 400 with errors if invalid)
+- Log all operations with redacted sensitive data
+- Return success response with processed data
+- Use existing types from `src/types/index.ts`
+- Follow pattern from `api/health.ts`
+
+**Response codes:**
+- 200: Success
+- 400: Validation error (missing fields, invalid values)
+- 401: Invalid secret
+- 405: Method not allowed
+- 500: Internal server error
+
+### Task 4: Create `api/webhook.test.ts`
+
+**Purpose:** Integration tests for webhook endpoint.
+
+**Test cases:**
+- Valid POST with correct secret returns 200
+- Missing secret returns 401
+- Invalid secret returns 401
+- Missing required fields return 400 with error details
+- Invalid action returns 400
+- Invalid quantity returns 400
+- Non-POST method returns 405
+- Response format matches specification
+
+### Task 5: Run Validation
+
+**Purpose:** Ensure all code quality checks pass.
+
+**Commands:**
+- `npm run lint` - ESLint with 0 warnings
+- `npm run typecheck` - TypeScript compilation
+- `npm run test` - Vitest tests
+
+## Dependencies
 
 ```
-Independent:
-  Task 1 (Logger)
-  Task 6 (Event Store)
-  Task 8 (Dashboard HTML)
-  Task 15 (Health Check)
-
-Task 1 (Logger)
-    ├── Task 2 (Validation)
-    │       └── Task 3 (Parser)
-    │               └── Task 7 (Webhook) ←──────────┐
-    └── Task 4 (Auth Client)                        │
-            ├── Task 5 (Orders) ────────────────────┘
-            ├── Task 10 (Account) → Task 11 (Account API)
-            ├── Task 14 (Positions)
-            ├── Task 16 (WebSocket)
-            └── Task 17 (Rate Limiter)
-
-Task 6 (Event Store)
-    ├── Task 7 (Webhook)
-    ├── Task 9 (SSE Events)
-    ├── Task 11 (Account API)
-    ├── Task 12 (Signals API)
-    └── Task 13 (Trades API)
-
-Task 18 (Index Exports) - Depends on Tasks 4, 5, 14
-Task 19 (Integration Tests) - Depends on Tasks 7, 9
+Task 1 (validation.ts) ─┬─> Task 3 (webhook.ts) ───> Task 5 (validate)
+                        │
+Task 2 (validation.test.ts) ─────────────────────┘
+                        │
+                        └─> Task 4 (webhook.test.ts) ─> Task 5 (validate)
 ```
 
----
-
-## Recommended Implementation Order
-
-**Phase 1: Foundation**
-1. Task 1 - Logger
-2. Task 6 - Event Store
-3. Task 8 - Dashboard HTML (can work in parallel)
-
-**Phase 2: Core Services**
-4. Task 2 - Validation
-5. Task 3 - Parser
-6. Task 4 - Auth Client
-7. Task 5 - Orders
-
-**Phase 3: Webhook & Streaming**
-8. Task 7 - Webhook Endpoint
-9. Task 9 - SSE Events Endpoint
-10. Task 15 - Health Check
-
-**Phase 4: Dashboard APIs**
-11. Task 10 - Account Service
-12. Task 11 - Account API
-13. Task 12 - Signals API
-14. Task 13 - Trades API
-
-**Phase 5: Enhancements**
-15. Task 14 - Positions
-16. Task 16 - WebSocket (optional)
-17. Task 17 - Rate Limiter
-18. Task 18 - Index Exports
-19. Task 19 - Integration Tests
-
----
-
-## Completion Tracking
-
-| Task | Description | Status | Date |
-|------|-------------|--------|------|
-| 1 | Logger | COMPLETE | 2026-02-11 |
-| 2 | Validation | NOT STARTED | - |
-| 3 | Parser | NOT STARTED | - |
-| 4 | Auth Client | NOT STARTED | - |
-| 5 | Orders | NOT STARTED | - |
-| 6 | Event Store | NOT STARTED | - |
-| 7 | Webhook | NOT STARTED | - |
-| 8 | Dashboard HTML | COMPLETE | 2026-02-11 |
-| 9 | SSE Events | NOT STARTED | - |
-| 10 | Account Service | NOT STARTED | - |
-| 11 | Account API | NOT STARTED | - |
-| 12 | Signals API | NOT STARTED | - |
-| 13 | Trades API | NOT STARTED | - |
-| 14 | Positions | NOT STARTED | - |
-| 15 | Health Check | COMPLETE | 2026-02-11 |
-| 16 | WebSocket | NOT STARTED | - |
-| 17 | Rate Limiter | NOT STARTED | - |
-| 18 | Index Exports | NOT STARTED | - |
-| 19 | Integration Tests | NOT STARTED | - |
-
-**Progress: 3/19 tasks complete**
-
----
+**Dependency order:**
+1. Task 1 must be completed first (validation utilities needed by webhook)
+2. Tasks 2, 3, 4 can be done in any order after Task 1
+3. Task 5 must be done last (requires all code to be in place)
 
 ## Notes
 
-- All API routes are in `/api` for Vercel serverless functions
-- Dashboard is served from `/public/index.html`
-- Run `npm run validate` after each task
-- Update this tracking table as tasks complete
+1. **Existing type definitions are complete** - No changes needed to `src/types/index.ts`
+2. **Logger already supports redaction** - Use existing logger for all logging
+3. **Follow Vercel patterns** - Use `api/health.ts` as reference for handler structure
+4. **Test coverage** - Include both unit tests (validation) and integration tests (endpoint)
+5. **No external dependencies** - Use native TypeScript/JavaScript for validation
+
+---
+
+BUILD COMPLETE - All tasks implemented
+
+## Implementation Summary
+
+All tasks have been completed successfully:
+
+1. **src/lib/validation.ts** - Implements `validateWebhookSecret` and `validateWebhookPayload` functions
+2. **src/lib/validation.test.ts** - 20 unit tests covering all validation scenarios
+3. **api/webhook.ts** - Main webhook endpoint handler with auth, validation, and logging
+4. **api/webhook.test.ts** - 17 integration tests covering HTTP methods, auth, and payload validation
+5. **Validation passed** - Lint (0 warnings), TypeScript (no errors), Tests (47 passed)

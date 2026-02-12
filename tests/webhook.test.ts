@@ -12,12 +12,6 @@ vi.mock('../src/lib/logger', () => ({
   },
 }));
 
-// Mock the database module
-const mockIsDatabaseConfigured = vi.fn<() => boolean>();
-vi.mock('../src/lib/db', () => ({
-  isDatabaseConfigured: () => mockIsDatabaseConfigured(),
-}));
-
 // Mock the alert storage module
 const mockSaveAlert = vi.fn<() => Promise<string>>();
 vi.mock('../src/services/alert-storage', () => ({
@@ -33,8 +27,6 @@ describe('webhook handler', () => {
   beforeEach(() => {
     process.env.WEBHOOK_SECRET = 'test-secret-123';
 
-    // Default: database not configured (preserves existing test behavior)
-    mockIsDatabaseConfigured.mockReturnValue(false);
     mockSaveAlert.mockResolvedValue('test-alert-id');
 
     mockReq = {
@@ -635,8 +627,7 @@ describe('webhook handler', () => {
   });
 
   describe('database storage integration', () => {
-    it('saves alert to database when configured', async () => {
-      mockIsDatabaseConfigured.mockReturnValue(true);
+    it('saves alert to database', async () => {
       mockSaveAlert.mockResolvedValue('abc-123-uuid');
 
       await handler(mockReq as VercelRequest, mockRes as VercelResponse);
@@ -647,19 +638,7 @@ describe('webhook handler', () => {
       expect(response.data.alertId).toBe('abc-123-uuid');
     });
 
-    it('does not save to database when not configured', async () => {
-      mockIsDatabaseConfigured.mockReturnValue(false);
-
-      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
-
-      expect(statusCode).toBe(200);
-      expect(mockSaveAlert).not.toHaveBeenCalled();
-      const response = responseData as { data: { alertId?: string } };
-      expect(response.data.alertId).toBeUndefined();
-    });
-
     it('returns 500 when database save fails', async () => {
-      mockIsDatabaseConfigured.mockReturnValue(true);
       mockSaveAlert.mockRejectedValue(new Error('Connection refused'));
 
       await handler(mockReq as VercelRequest, mockRes as VercelResponse);
@@ -672,7 +651,6 @@ describe('webhook handler', () => {
     });
 
     it('passes correct payload to saveAlert', async () => {
-      mockIsDatabaseConfigured.mockReturnValue(true);
       mockSaveAlert.mockResolvedValue('test-id');
 
       mockReq.body = {
@@ -708,7 +686,6 @@ describe('webhook handler', () => {
     });
 
     it('does not call saveAlert before secret validation', async () => {
-      mockIsDatabaseConfigured.mockReturnValue(true);
       mockReq.body = {
         secret: 'wrong-secret',
         symbol: 'ES',

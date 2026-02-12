@@ -3,7 +3,6 @@ import { logger } from '../src/lib/logger';
 import { validateWebhookSecret, validateTradingViewPayload } from '../src/lib/validation';
 import { parseWebhookPayload } from '../src/lib/tradingview-parser';
 import { saveAlert } from '../src/services/alert-storage';
-import { isDatabaseConfigured } from '../src/lib/db';
 import type { WebhookResponse, ParsedWebhookPayload } from '../src/types';
 
 /**
@@ -118,22 +117,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     hasOhlcv: !!payload.ohlcv,
   });
 
-  // Persist alert to database if configured
+  // Persist alert to database
   let alertId: string | undefined;
-  if (isDatabaseConfigured()) {
-    try {
-      alertId = await saveAlert(payload);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown storage error';
-      logger.error('Failed to save alert to database', { error: errorMessage });
-      const response: WebhookResponse = {
-        success: false,
-        error: 'Storage error',
-        details: 'Failed to persist alert',
-      };
-      res.status(500).json(response);
-      return;
-    }
+  try {
+    alertId = await saveAlert(payload);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown storage error';
+    logger.error('Failed to save alert to database', { error: errorMessage });
+    const response: WebhookResponse = {
+      success: false,
+      error: 'Storage error',
+      details: 'Failed to persist alert',
+    };
+    res.status(500).json(response);
+    return;
   }
 
   // Build response data with OHLCV information

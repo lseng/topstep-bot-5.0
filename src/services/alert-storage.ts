@@ -1,8 +1,9 @@
 // Alert storage service - persists webhook alerts to the database
 
-import { query } from '../lib/db';
+import { getSupabase } from '../lib/supabase';
 import { logger } from '../lib/logger';
-import type { AlertRecord, AlertStatus, ParsedWebhookPayload } from '../types';
+import type { AlertStatus, ParsedWebhookPayload } from '../types';
+import type { AlertInsert } from '../types/database';
 
 /**
  * Build raw_payload JSONB from the parsed webhook payload
@@ -35,29 +36,34 @@ function buildRawPayload(payload: ParsedWebhookPayload): Record<string, unknown>
  * Returns the generated alert ID on success
  */
 export async function saveAlert(payload: ParsedWebhookPayload): Promise<string> {
-  const orderType = payload.orderType ?? 'market';
-  const price = payload.price ?? null;
-  const stopLoss = payload.stopLoss ?? null;
-  const takeProfit = payload.takeProfit ?? null;
-  const comment = payload.comment ?? null;
   const status: AlertStatus = 'received';
-  const rawPayload = JSON.stringify(buildRawPayload(payload));
 
   try {
-    const result = await query<Pick<AlertRecord, 'id'>>`
-      INSERT INTO alerts (
-        symbol, action, quantity,
-        order_type, price, stop_loss, take_profit,
-        comment, status, raw_payload
-      ) VALUES (
-        ${payload.symbol}, ${payload.action}, ${payload.quantity},
-        ${orderType}, ${price}, ${stopLoss}, ${takeProfit},
-        ${comment}, ${status}, ${rawPayload}::jsonb
-      )
-      RETURNING id
-    `;
+    const supabase = getSupabase();
+    const row: AlertInsert = {
+      symbol: payload.symbol,
+      action: payload.action,
+      quantity: payload.quantity,
+      order_type: payload.orderType ?? 'market',
+      price: payload.price ?? null,
+      stop_loss: payload.stopLoss ?? null,
+      take_profit: payload.takeProfit ?? null,
+      comment: payload.comment ?? null,
+      status,
+      raw_payload: buildRawPayload(payload),
+    };
 
-    const alertId = result[0].id;
+    const { data, error } = await supabase
+      .from('alerts')
+      .insert(row as never)
+      .select('id')
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const alertId = (data as { id: string }).id;
     logger.info('Alert saved to database', { alertId, symbol: payload.symbol });
     return alertId;
   } catch (error) {

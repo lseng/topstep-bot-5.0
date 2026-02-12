@@ -103,34 +103,45 @@ def parse_json(text: str, target_type: Type[T] = None) -> Union[T, Any]:
 
 
 def check_env_vars(logger: Optional[logging.Logger] = None) -> None:
-    """Check that all required environment variables are set."""
-    required_vars = ["ANTHROPIC_API_KEY", "GITHUB_PAT"]
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    """Check that all required environment variables are set.
 
-    if missing_vars:
-        error_msg = "Error: Missing required environment variables:"
-        if logger:
-            logger.error(error_msg)
-            for var in missing_vars:
-                logger.error(f"  - {var}")
-            logger.error("See .env.example for required variables")
-        else:
-            print(error_msg, file=sys.stderr)
-            for var in missing_vars:
-                print(f"  - {var}", file=sys.stderr)
-            print("See .env.example for required variables", file=sys.stderr)
-        sys.exit(1)
+    Note: ANTHROPIC_API_KEY is NOT required because we use Claude Code CLI
+    which uses your Claude Max subscription credits, not API credits.
+
+    GITHUB_PAT is optional if you're authenticated via 'gh auth login'.
+    """
+    # No required env vars for ADW - we use Claude Code CLI (Max credits)
+    # and gh CLI can use 'gh auth login' authentication
+    pass
 
 
 def check_required_tools(logger: Optional[logging.Logger] = None) -> None:
-    """Check that all required CLI tools are installed."""
+    """Check that all required CLI tools are installed.
+
+    Required tools:
+    - gh: GitHub CLI (must be authenticated via 'gh auth login')
+    - git: Git version control
+    - claude: Claude Code CLI (uses your Max subscription credits)
+    """
     import shutil
     import subprocess
+
+    def log_error(msg: str) -> None:
+        if logger:
+            logger.error(msg)
+        else:
+            print(msg, file=sys.stderr)
+
+    def log_info(msg: str) -> None:
+        if logger:
+            logger.info(msg)
+        else:
+            print(msg)
 
     tools = {
         "gh": "GitHub CLI - install from https://cli.github.com/",
         "git": "Git - install from https://git-scm.com/",
-        "claude": "Claude Code CLI - install from https://claude.ai/code",
+        "claude": "Claude Code CLI - uses your Max subscription credits",
     }
 
     missing_tools = []
@@ -138,7 +149,7 @@ def check_required_tools(logger: Optional[logging.Logger] = None) -> None:
         if not shutil.which(tool):
             missing_tools.append((tool, description))
 
-    # Check gh auth status
+    # Check gh auth status (only if gh is installed)
     if shutil.which("gh"):
         result = subprocess.run(
             ["gh", "auth", "status"],
@@ -147,17 +158,17 @@ def check_required_tools(logger: Optional[logging.Logger] = None) -> None:
         )
         if result.returncode != 0:
             missing_tools.append(("gh auth", "GitHub CLI not authenticated - run: gh auth login"))
+        else:
+            log_info("✓ GitHub CLI authenticated")
+
+    # Check claude CLI
+    if shutil.which("claude"):
+        log_info("✓ Claude Code CLI found (uses Max subscription credits)")
 
     if missing_tools:
-        error_msg = "Error: Missing required tools:"
-        if logger:
-            logger.error(error_msg)
-            for tool, desc in missing_tools:
-                logger.error(f"  - {tool}: {desc}")
-        else:
-            print(error_msg, file=sys.stderr)
-            for tool, desc in missing_tools:
-                print(f"  - {tool}: {desc}", file=sys.stderr)
+        log_error("Error: Missing required tools:")
+        for tool, desc in missing_tools:
+            log_error(f"  - {tool}: {desc}")
         sys.exit(1)
 
 

@@ -144,13 +144,13 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
     - `created_at` (TIMESTAMPTZ, default now())
   - Add migration runner script to package.json
 
-- [ ] **3.3** Create alert storage service `src/services/alert-storage.ts` - [Medium complexity]
+- [x] **3.3** Create alert storage service `src/services/alert-storage.ts` - [Medium complexity]
   - Implement `saveAlert()` function
   - Map parsed webhook data to database columns
   - Handle database errors gracefully
   - Return alert ID on success
 
-- [ ] **3.4** Write tests for alert storage `src/services/alert-storage.test.ts` - [Low complexity]
+- [x] **3.4** Write tests for alert storage `src/services/alert-storage.test.ts` - [Low complexity]
   - Test successful alert saving
   - Test with all OHLCV fields populated
   - Test with minimal required fields

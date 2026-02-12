@@ -1,15 +1,33 @@
 // Alert storage service - persists webhook alerts to the database
 
-import { createHash } from 'node:crypto';
 import { query } from '../lib/db';
 import { logger } from '../lib/logger';
 import type { AlertRecord, AlertStatus, ParsedWebhookPayload } from '../types';
 
 /**
- * Hash the webhook secret for audit storage (never store raw secrets)
+ * Build raw_payload JSONB from the parsed webhook payload
  */
-function hashSecret(secret: string): string {
-  return createHash('sha256').update(secret).digest('hex');
+function buildRawPayload(payload: ParsedWebhookPayload): Record<string, unknown> {
+  const raw: Record<string, unknown> = {
+    action: payload.action,
+    symbol: payload.symbol,
+    quantity: payload.quantity,
+  };
+
+  if (payload.interval) raw.interval = payload.interval;
+  if (payload.alertTime) raw.alertTime = payload.alertTime.toISOString();
+  if (payload.ohlcv?.open !== undefined) raw.open = payload.ohlcv.open;
+  if (payload.ohlcv?.high !== undefined) raw.high = payload.ohlcv.high;
+  if (payload.ohlcv?.low !== undefined) raw.low = payload.ohlcv.low;
+  if (payload.ohlcv?.close !== undefined) raw.close = payload.ohlcv.close;
+  if (payload.ohlcv?.volume !== undefined) raw.volume = payload.ohlcv.volume;
+  if (payload.orderType) raw.orderType = payload.orderType;
+  if (payload.price !== undefined) raw.price = payload.price;
+  if (payload.stopLoss !== undefined) raw.stopLoss = payload.stopLoss;
+  if (payload.takeProfit !== undefined) raw.takeProfit = payload.takeProfit;
+  if (payload.comment) raw.comment = payload.comment;
+
+  return raw;
 }
 
 /**
@@ -17,35 +35,24 @@ function hashSecret(secret: string): string {
  * Returns the generated alert ID on success
  */
 export async function saveAlert(payload: ParsedWebhookPayload): Promise<string> {
-  const secretHash = hashSecret(payload.secret);
-  const alertTime = payload.alertTime ?? null;
-  const interval = payload.interval ?? null;
-  const openPrice = payload.ohlcv?.open ?? null;
-  const highPrice = payload.ohlcv?.high ?? null;
-  const lowPrice = payload.ohlcv?.low ?? null;
-  const closePrice = payload.ohlcv?.close ?? null;
-  const barVolume = payload.ohlcv?.volume ?? null;
-  const orderType = payload.orderType ?? null;
+  const orderType = payload.orderType ?? 'market';
   const price = payload.price ?? null;
   const stopLoss = payload.stopLoss ?? null;
   const takeProfit = payload.takeProfit ?? null;
   const comment = payload.comment ?? null;
   const status: AlertStatus = 'received';
+  const rawPayload = JSON.stringify(buildRawPayload(payload));
 
   try {
     const result = await query<Pick<AlertRecord, 'id'>>`
       INSERT INTO alerts (
-        secret_hash, symbol, action, quantity,
-        interval, alert_time,
-        open_price, high_price, low_price, close_price, bar_volume,
+        symbol, action, quantity,
         order_type, price, stop_loss, take_profit,
-        comment, status
+        comment, status, raw_payload
       ) VALUES (
-        ${secretHash}, ${payload.symbol}, ${payload.action}, ${payload.quantity},
-        ${interval}, ${alertTime},
-        ${openPrice}, ${highPrice}, ${lowPrice}, ${closePrice}, ${barVolume},
+        ${payload.symbol}, ${payload.action}, ${payload.quantity},
         ${orderType}, ${price}, ${stopLoss}, ${takeProfit},
-        ${comment}, ${status}
+        ${comment}, ${status}, ${rawPayload}::jsonb
       )
       RETURNING id
     `;

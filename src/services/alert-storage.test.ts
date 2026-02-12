@@ -70,30 +70,26 @@ describe('alert-storage', () => {
       expect(templateStrings.join('')).toContain('INSERT INTO alerts');
       expect(templateStrings.join('')).toContain('RETURNING id');
 
-      // Check values - secret should be hashed (64 char hex string)
-      const secretHash = values[0] as string;
-      expect(secretHash).toHaveLength(64);
-      expect(secretHash).toMatch(/^[0-9a-f]{64}$/);
+      // symbol, action, quantity
+      expect(values[0]).toBe('ES');
+      expect(values[1]).toBe('buy');
+      expect(values[2]).toBe(1);
 
-      // Symbol, action, quantity
-      expect(values[1]).toBe('ES');
-      expect(values[2]).toBe('buy');
-      expect(values[3]).toBe(1);
+      // order_type defaults to 'market'
+      expect(values[3]).toBe('market');
 
       // Optional fields should be null
-      expect(values[4]).toBeNull(); // interval
-      expect(values[5]).toBeNull(); // alert_time
-      expect(values[6]).toBeNull(); // open_price
-      expect(values[7]).toBeNull(); // high_price
-      expect(values[8]).toBeNull(); // low_price
-      expect(values[9]).toBeNull(); // close_price
-      expect(values[10]).toBeNull(); // bar_volume
-      expect(values[11]).toBeNull(); // order_type
-      expect(values[12]).toBeNull(); // price
-      expect(values[13]).toBeNull(); // stop_loss
-      expect(values[14]).toBeNull(); // take_profit
-      expect(values[15]).toBeNull(); // comment
-      expect(values[16]).toBe('received'); // status
+      expect(values[4]).toBeNull(); // price
+      expect(values[5]).toBeNull(); // stop_loss
+      expect(values[6]).toBeNull(); // take_profit
+      expect(values[7]).toBeNull(); // comment
+      expect(values[8]).toBe('received'); // status
+
+      // raw_payload should be JSON string with minimal fields
+      const rawPayload = JSON.parse(values[9] as string);
+      expect(rawPayload.symbol).toBe('ES');
+      expect(rawPayload.action).toBe('buy');
+      expect(rawPayload.quantity).toBe(1);
     });
 
     it('saves an alert with all OHLCV fields populated', async () => {
@@ -106,42 +102,28 @@ describe('alert-storage', () => {
 
       const values = mockQuery.mock.calls[0].slice(1);
 
-      // Symbol, action, quantity
-      expect(values[1]).toBe('NQ');
-      expect(values[2]).toBe('sell');
-      expect(values[3]).toBe(3);
+      // symbol, action, quantity
+      expect(values[0]).toBe('NQ');
+      expect(values[1]).toBe('sell');
+      expect(values[2]).toBe(3);
 
-      // Interval and alert_time
-      expect(values[4]).toBe('5');
-      expect(values[5]).toEqual(new Date('2026-01-15T10:30:00Z'));
+      // order fields
+      expect(values[3]).toBe('limit'); // order_type
+      expect(values[4]).toBe(4852.0); // price
+      expect(values[5]).toBe(4845.0); // stop_loss
+      expect(values[6]).toBe(4870.0); // take_profit
+      expect(values[7]).toBe('Test alert'); // comment
+      expect(values[8]).toBe('received'); // status
 
-      // OHLCV fields
-      expect(values[6]).toBe(4850.25); // open
-      expect(values[7]).toBe(4853.0); // high
-      expect(values[8]).toBe(4849.75); // low
-      expect(values[9]).toBe(4852.5); // close
-      expect(values[10]).toBe(12500); // volume
-
-      // Optional order fields
-      expect(values[11]).toBe('limit'); // order_type
-      expect(values[12]).toBe(4852.0); // price
-      expect(values[13]).toBe(4845.0); // stop_loss
-      expect(values[14]).toBe(4870.0); // take_profit
-      expect(values[15]).toBe('Test alert'); // comment
-      expect(values[16]).toBe('received'); // status
-    });
-
-    it('hashes the secret consistently', async () => {
-      mockQuery.mockResolvedValue([{ id: 'test-id' }]);
-
-      await saveAlert(minimalPayload);
-      const hash1 = mockQuery.mock.calls[0][1];
-
-      mockQuery.mockClear();
-      await saveAlert(minimalPayload);
-      const hash2 = mockQuery.mock.calls[0][1];
-
-      expect(hash1).toBe(hash2);
+      // raw_payload should contain OHLCV and all fields
+      const rawPayload = JSON.parse(values[9] as string);
+      expect(rawPayload.open).toBe(4850.25);
+      expect(rawPayload.high).toBe(4853.0);
+      expect(rawPayload.low).toBe(4849.75);
+      expect(rawPayload.close).toBe(4852.5);
+      expect(rawPayload.volume).toBe(12500);
+      expect(rawPayload.interval).toBe('5');
+      expect(rawPayload.alertTime).toBe('2026-01-15T10:30:00.000Z');
     });
 
     it('throws an error when the database query fails', async () => {

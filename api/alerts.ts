@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabase } from '../src/lib/supabase';
+import { getSupabase } from '../src/lib/supabase';
 import type { AlertsResponse, PaginationMeta } from '../src/types';
 import type { AlertStatus, TradeAction } from '../src/types/database';
 
@@ -75,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   try {
     // Build count query for pagination
-    let countQuery = supabase.from('alerts').select('*', { count: 'exact', head: true });
+    let countQuery = getSupabase().from('alerts').select('*', { count: 'exact', head: true });
     if (symbol) countQuery = countQuery.eq('symbol', symbol);
     if (action) countQuery = countQuery.eq('action', action);
     if (status) countQuery = countQuery.eq('status', status);
@@ -93,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // Build data query
     const offset = (page - 1) * limit;
-    let dataQuery = supabase
+    let dataQuery = getSupabase()
       .from('alerts')
       .select('*')
       .order(sort, { ascending: order === 'asc' })

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabase } from '../../src/lib/supabase';
+import { getSupabase } from '../../src/lib/supabase';
 import type { AlertDetailResponse } from '../../src/types';
 import type { AlertRow } from '../../src/types/database';
 
@@ -19,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
       .from('alerts')
       .select('*')
       .eq('id', id)

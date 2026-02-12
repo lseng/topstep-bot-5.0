@@ -24,9 +24,9 @@ function createQueryBuilder(): Record<string, unknown> {
 const mockFrom = vi.fn(() => createQueryBuilder());
 
 vi.mock('../src/lib/supabase', () => ({
-  supabase: {
+  getSupabase: () => ({
     from: (...args: unknown[]) => mockFrom(...args),
-  },
+  }),
 }));
 
 import handler from '../api/alerts/[id]';

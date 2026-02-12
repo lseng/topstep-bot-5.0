@@ -1,10 +1,8 @@
 // Database connection utility for Neon Serverless Postgres
 
-import { neon, neonConfig, NeonQueryFunction } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { logger } from './logger';
 
-// Enable full fetch responses for better error handling
-neonConfig.fetchConnectionCache = true;
 
 // Lazy-initialized SQL query function
 let sqlInstance: NeonQueryFunction<false, false> | null = null;
@@ -32,9 +30,9 @@ function getSql(): NeonQueryFunction<false, false> {
  */
 function getDatabaseUrl(): string | undefined {
   return (
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.POSTGRES_URL_NON_POOLING
+    process.env.DATABASE_URL?.trim() ||
+    process.env.POSTGRES_URL?.trim() ||
+    process.env.POSTGRES_URL_NON_POOLING?.trim()
   );
 }
 

@@ -83,7 +83,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
 
 ### Phase 2: Webhook Handler Integration
 
-- [ ] **2.1** Update validation module `src/lib/validation.ts` - [Medium complexity]
+- [x] **2.1** Update validation module `src/lib/validation.ts` - [Medium complexity]
   - Add `validateTradingViewPayload()` function
   - Accept `ticker` as alternative to `symbol`
   - Make `quantity` optional (default to 1)
@@ -91,7 +91,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
   - Add optional validation for `interval` string field
   - Add optional validation for `time` ISO timestamp field
 
-- [ ] **2.2** Update validation tests `src/lib/validation.test.ts` - [Low complexity]
+- [x] **2.2** Update validation tests `src/lib/validation.test.ts` - [Low complexity]
   - Test ticker → symbol mapping
   - Test quantity defaulting to 1
   - Test OHLCV field validation (optional, numeric)

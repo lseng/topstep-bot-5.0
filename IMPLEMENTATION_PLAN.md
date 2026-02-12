@@ -113,11 +113,11 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
 
 ### Phase 3: Database Integration
 
-- [ ] **3.1** Set up database configuration - [Medium complexity]
-  - Add `@vercel/postgres` or `pg` dependency to package.json
+- [x] **3.1** Set up database configuration - [Medium complexity]
+  - Add `@neondatabase/serverless` dependency to package.json (successor to @vercel/postgres)
   - Create database connection utility `src/lib/db.ts`
-  - Add database URL environment variable handling
-  - Create connection pooling setup
+  - Add database URL environment variable handling (DATABASE_URL, POSTGRES_URL)
+  - Connection pooling handled by Neon serverless driver
 
 - [ ] **3.2** Create database schema and migration - [Medium complexity]
   - Create `migrations/` directory structure

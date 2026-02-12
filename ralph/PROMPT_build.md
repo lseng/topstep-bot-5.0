@@ -8,9 +8,10 @@ Study these files before implementing:
 
 1. **`AGENTS.md`** - Architecture, database schema, patterns
 2. **`IMPLEMENTATION_PLAN.md`** - Tasks to implement
-3. **`specs/*`** - Detailed requirements
-4. **`src/types/database.ts`** - Database types
-5. **`src/*` and `api/*`** - Existing code patterns
+3. **`TEST_FAILURES.md`** (if present) - Test failures from previous build that MUST be fixed FIRST before any other tasks
+4. **`specs/*`** - Detailed requirements
+5. **`src/types/database.ts`** - Database types
+6. **`src/*` and `api/*`** - Existing code patterns
 
 ## Database Awareness (CRITICAL)
 

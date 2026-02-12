@@ -71,9 +71,9 @@ from adw_modules.r2_uploader import R2Uploader
 
 # Constants
 MAX_TEST_RETRY_ATTEMPTS = 3
-MAX_BACKPRESSURE_LOOPS = 2
-DEFAULT_PLAN_ITERATIONS = 3  # Multiple iterations to ensure thorough planning
-DEFAULT_BUILD_ITERATIONS = 10
+MAX_BACKPRESSURE_LOOPS = 0  # 0 = unlimited, loop plan->build->test until all tests pass
+DEFAULT_PLAN_ITERATIONS = 0  # 0 = unlimited, iterate until done
+DEFAULT_BUILD_ITERATIONS = 0  # 0 = unlimited, iterate until done
 AGENT_TESTER = "test_runner"
 AGENT_REVIEWER = "reviewer"
 
@@ -187,6 +187,10 @@ def capture_screenshots(
     logger.info(f"Capturing screenshots to {review_img_dir}")
     logger.info(f"Using worktree at: {worktree_path}")
 
+    if not os.path.exists(capture_script):
+        logger.info("Screenshot capture script not found, skipping screenshots")
+        return find_screenshots_in_dir(review_img_dir, logger)
+
     try:
         result = subprocess.run(
             ["uv", "run", capture_script, review_img_dir, "--port", port, "--cwd", worktree_path],
@@ -299,12 +303,15 @@ def build_review_comment(review_result: ReviewResult) -> str:
     if review_result.review_issues:
         parts.append("\n## Review Issues\n")
         for issue in review_result.review_issues:
+            severity = getattr(issue, "issue_severity", "unknown")
+            description = getattr(issue, "issue_description", "No description")
+            resolution = getattr(issue, "issue_resolution", "")
             severity_emoji = {"blocker": "🚫", "tech_debt": "⚠️", "skippable": "ℹ️"}.get(
-                issue.get("issue_severity", ""), "•"
+                severity, "•"
             )
-            parts.append(f"{severity_emoji} **{issue.get('issue_severity', 'unknown').upper()}**: {issue.get('issue_description', 'No description')}")
-            if issue.get("issue_resolution"):
-                parts.append(f"   - Resolution: {issue.get('issue_resolution')}")
+            parts.append(f"{severity_emoji} **{severity.upper()}**: {description}")
+            if resolution:
+                parts.append(f"   - Resolution: {resolution}")
 
     # Add screenshots
     if review_result.screenshot_urls:
@@ -358,7 +365,31 @@ def merge_to_main(branch_name: str, logger: logging.Logger) -> Tuple[bool, Optio
             capture_output=True, text=True, cwd=repo_root
         )
         if result.returncode != 0:
-            subprocess.run(["git", "checkout", original_branch], cwd=repo_root)
+            stderr_lower = result.stderr.lower()
+            is_conflict = "conflict" in stderr_lower or "automatic merge failed" in stderr_lower
+
+            # Abort the failed local merge
+            subprocess.run(["git", "merge", "--abort"], cwd=repo_root, capture_output=True)
+            subprocess.run(["git", "checkout", original_branch], cwd=repo_root, capture_output=True)
+
+            if is_conflict:
+                # Retry via GitHub's merge API which can handle simple conflicts
+                logger.info("Local merge failed with conflicts, attempting GitHub PR merge...")
+                gh_result = subprocess.run(
+                    ["gh", "pr", "merge", branch_name, "--merge",
+                     "--subject", f"Merge '{branch_name}' via ADW Ralph workflow"],
+                    capture_output=True, text=True, cwd=repo_root
+                )
+                if gh_result.returncode == 0:
+                    # Pull the merged main locally
+                    subprocess.run(["git", "checkout", "main"], cwd=repo_root, capture_output=True)
+                    subprocess.run(["git", "pull", "origin", "main"], cwd=repo_root, capture_output=True)
+                    logger.info("Merged via GitHub PR merge and pulled to local main")
+                    return True, None
+
+                logger.info("GitHub PR merge also failed, falling back to manual review")
+                return False, f"Merge conflicts could not be auto-resolved: {result.stderr}"
+
             return False, f"Failed to merge: {result.stderr}"
 
         result = subprocess.run(
@@ -542,14 +573,18 @@ def main():
         format_issue_message(adw_id, "ralph", "Planning complete")
     )
 
-    # === BACKPRESSURE LOOP: BUILD -> TEST -> (re-build if fail) ===
+    # === BACKPRESSURE LOOP: BUILD -> TEST -> (re-plan + re-build if fail) ===
     all_tests_passed = False
     test_results = []
+    backpressure_loop = 0
 
-    for backpressure_loop in range(1, MAX_BACKPRESSURE_LOOPS + 1):
+    while True:
+        backpressure_loop += 1
+        loop_label = f"loop {backpressure_loop}" if MAX_BACKPRESSURE_LOOPS == 0 else f"loop {backpressure_loop}/{MAX_BACKPRESSURE_LOOPS}"
+
         make_issue_comment(
             issue_number,
-            format_issue_message(adw_id, "ralph", f"Building (loop {backpressure_loop}/{MAX_BACKPRESSURE_LOOPS})...")
+            format_issue_message(adw_id, "ralph", f"Building ({loop_label})...")
         )
 
         success, error = run_ralph_phase("build", worktree_path, build_iterations, logger)
@@ -574,11 +609,46 @@ def main():
             )
             break
 
-        if backpressure_loop < MAX_BACKPRESSURE_LOOPS:
+        # Check if we've hit the max (0 = unlimited)
+        if MAX_BACKPRESSURE_LOOPS != 0 and backpressure_loop >= MAX_BACKPRESSURE_LOOPS:
             make_issue_comment(
                 issue_number,
-                format_issue_message(adw_id, "ops", "Tests failed. Re-running Ralph build (backpressure loop)...")
+                format_issue_message(adw_id, "ops", f"Reached max backpressure loops ({MAX_BACKPRESSURE_LOOPS}). Moving on with failures.")
             )
+            break
+
+        # Format test failure details for the re-planning phase
+        failed_tests = [t for t in test_results if not t.passed]
+        failure_summary = "\n".join(
+            f"- **{t.test_name}**: {t.error or 'unknown error'}" for t in failed_tests
+        )
+
+        make_issue_comment(
+            issue_number,
+            format_issue_message(adw_id, "ops",
+                f"Tests failed ({failed} failures). Re-planning to fix:\n\n{failure_summary}\n\n"
+                "Running plan phase to address failures, then re-building...")
+        )
+
+        # Write test failures to a file so the plan phase can see them
+        failures_file = os.path.join(worktree_path, "TEST_FAILURES.md")
+        with open(failures_file, "w") as f:
+            f.write(f"# Test Failures (Backpressure Loop {backpressure_loop})\n\n")
+            f.write(f"The following {failed} test(s) failed and need to be fixed:\n\n")
+            for t in failed_tests:
+                f.write(f"## {t.test_name}\n")
+                f.write(f"- **Command**: `{t.execution_command}`\n")
+                f.write(f"- **Purpose**: {t.test_purpose}\n")
+                f.write(f"- **Error**: {t.error or 'unknown'}\n\n")
+
+        # Re-run plan phase to address failures
+        success, error = run_ralph_phase("plan", worktree_path, plan_iterations, logger)
+        if not success:
+            logger.warning(f"Ralph re-planning had issues: {error}")
+
+        # Clean up failures file after planning
+        if os.path.exists(failures_file):
+            os.remove(failures_file)
 
     # === REVIEW WITH SCREENSHOTS ===
     if not skip_review:

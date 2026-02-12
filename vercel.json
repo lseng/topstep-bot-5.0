@@ -1,39 +1,14 @@
 {
-  "version": 2,
-  "builds": [
+  "buildCommand": "npm run dashboard:build",
+  "outputDirectory": "public",
+  "rewrites": [
     {
-      "src": "api/**/*.ts",
-      "use": "@vercel/node"
+      "source": "/api/alerts/:id",
+      "destination": "/api/alerts/[id]"
     },
     {
-      "src": "public/**",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/health",
-      "dest": "/api/health.ts"
-    },
-    {
-      "src": "/api/webhook",
-      "dest": "/api/webhook.ts"
-    },
-    {
-      "src": "/api/alerts/(.+)",
-      "dest": "/api/alerts/[id].ts?id=$1"
-    },
-    {
-      "src": "/api/alerts",
-      "dest": "/api/alerts.ts"
-    },
-    {
-      "src": "/",
-      "dest": "/public/index.html"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/$1"
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ]
 }

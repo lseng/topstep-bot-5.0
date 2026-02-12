@@ -12,6 +12,7 @@ Study these files in order to understand the full system:
 4. **`supabase/migrations/*`** - Database schema history
 5. **`src/*` and `api/*`** - Current codebase structure
 6. **`IMPLEMENTATION_PLAN.md`** (if present) - Existing progress
+7. **`TEST_FAILURES.md`** (if present) - Test failures from previous build that MUST be fixed. Add fix tasks to the plan with highest priority.
 
 ## Database Awareness (CRITICAL)
 

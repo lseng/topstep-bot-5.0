@@ -43,7 +43,11 @@ echo "======================================================================="
 echo "  RALPH LOOP - Autonomous AI Coding"
 echo "======================================================================="
 echo "  Mode: $MODE"
-echo "  Max Iterations: $MAX_ITERATIONS"
+if [[ $MAX_ITERATIONS -eq 0 ]]; then
+    echo "  Max Iterations: unlimited"
+else
+    echo "  Max Iterations: $MAX_ITERATIONS"
+fi
 echo "  Project: $PROJECT_ROOT"
 echo "======================================================================="
 echo ""
@@ -87,7 +91,11 @@ run_iteration() {
 
     echo ""
     echo "-------------------------------------------------------------------"
-    echo "  Iteration $iteration_num / $MAX_ITERATIONS"
+    if [[ $MAX_ITERATIONS -eq 0 ]]; then
+        echo "  Iteration $iteration_num (unlimited)"
+    else
+        echo "  Iteration $iteration_num / $MAX_ITERATIONS"
+    fi
     echo "-------------------------------------------------------------------"
     echo ""
 
@@ -124,7 +132,7 @@ run_iteration() {
 echo "Starting Ralph loop..."
 echo ""
 
-while [[ $ITERATION -lt $MAX_ITERATIONS ]]; do
+while [[ $MAX_ITERATIONS -eq 0 || $ITERATION -lt $MAX_ITERATIONS ]]; do
     ITERATION=$((ITERATION + 1))
 
     # Check if there's work remaining
@@ -145,7 +153,7 @@ while [[ $ITERATION -lt $MAX_ITERATIONS ]]; do
     sleep 2
 done
 
-if [[ $ITERATION -ge $MAX_ITERATIONS ]]; then
+if [[ $MAX_ITERATIONS -ne 0 && $ITERATION -ge $MAX_ITERATIONS ]]; then
     echo ""
     echo "Reached maximum iterations ($MAX_ITERATIONS). Review and restart if needed."
 fi

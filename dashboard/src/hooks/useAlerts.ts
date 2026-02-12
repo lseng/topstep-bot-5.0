@@ -57,5 +57,6 @@ export function useAlerts(params: UseAlertsParams = {}) {
       if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.status}`);
       return res.json() as Promise<AlertsResponse>;
     },
+    refetchInterval: 5000,
   });
 }

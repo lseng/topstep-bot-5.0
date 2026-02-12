@@ -59,7 +59,7 @@ export function App() {
     const total = pagination.total;
     const executed = alerts.filter((a) => a.status === 'executed').length;
     const failed = alerts.filter((a) => a.status === 'failed').length;
-    const successRate = total > 0 ? (executed / alerts.length) * 100 : 0;
+    const successRate = total > 0 ? (executed / total) * 100 : 0;
     const lastAlert = alerts.length > 0 ? alerts[0].created_at : null;
     return { totalAlerts: total, successRate, failedCount: failed, lastAlertTime: lastAlert };
   }, [alerts, pagination.total]);

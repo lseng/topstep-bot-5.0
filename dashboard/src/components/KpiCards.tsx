@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@dashboard/components/ui/card';
 import { Activity, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { useTick } from '@dashboard/hooks/useTick';
 
 interface KpiCardsProps {
   totalAlerts: number;
@@ -27,6 +28,7 @@ export function KpiCards({
   failedCount,
   lastAlertTime,
 }: KpiCardsProps) {
+  useTick();
   const cards = [
     {
       title: 'Total Alerts',

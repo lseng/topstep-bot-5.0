@@ -30,6 +30,8 @@ function getBodyContent(req: VercelRequest): string | null {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  const startTime = performance.now();
+
   // Only accept POST requests
   if (req.method !== 'POST') {
     logger.warn('Method not allowed', { method: req.method });
@@ -167,9 +169,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       alertTime: payload.alertTime?.toISOString(),
       ohlcv: payload.ohlcv,
     };
+
+    const durationMs = Math.round(performance.now() - startTime);
+    logger.info('Webhook response', { durationMs, symbol: payload.symbol });
     res.status(200).json(extendedResponse);
     return;
   }
 
+  const durationMs = Math.round(performance.now() - startTime);
+  logger.info('Webhook response', { durationMs, symbol: payload.symbol });
   res.status(200).json(response);
 }

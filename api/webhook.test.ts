@@ -23,6 +23,9 @@ describe('webhook handler', () => {
 
     mockReq = {
       method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
       body: {
         secret: 'test-secret-123',
         symbol: 'ES',
@@ -141,7 +144,7 @@ describe('webhook handler', () => {
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for missing quantity', () => {
+    it('returns 200 for missing quantity (defaults to 1)', () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
@@ -149,7 +152,9 @@ describe('webhook handler', () => {
       };
       handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
-      expect(statusCode).toBe(400);
+      expect(statusCode).toBe(200);
+      const response = responseData as { data: { quantity: number } };
+      expect(response.data.quantity).toBe(1);
     });
 
     it('returns 400 for invalid action', () => {

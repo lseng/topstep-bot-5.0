@@ -19,6 +19,7 @@ import { StatusBadge } from '@dashboard/components/StatusBadge';
 import { ActionBadge } from '@dashboard/components/ActionBadge';
 import { AlertDetailPanel } from '@dashboard/components/AlertDetailPanel';
 import { ChevronDown, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { useTick } from '@dashboard/hooks/useTick';
 
 interface AlertRow {
   id: string;
@@ -184,6 +185,7 @@ export function AlertsTable({
   sorting,
   onSortingChange,
 }: AlertsTableProps) {
+  useTick();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const table = useReactTable({

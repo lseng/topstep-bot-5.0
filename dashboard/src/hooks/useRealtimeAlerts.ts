@@ -13,16 +13,16 @@ export function useRealtimeAlerts() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'alerts' },
         () => {
-          void queryClient.invalidateQueries({ queryKey: ['alerts'] });
+          void queryClient.refetchQueries({ queryKey: ['alerts'] });
         },
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'alerts' },
         (payload) => {
-          void queryClient.invalidateQueries({ queryKey: ['alerts'] });
+          void queryClient.refetchQueries({ queryKey: ['alerts'] });
           if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
-            void queryClient.invalidateQueries({
+            void queryClient.refetchQueries({
               queryKey: ['alert', (payload.new as { id: string }).id],
             });
           }

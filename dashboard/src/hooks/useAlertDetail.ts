@@ -37,5 +37,6 @@ export function useAlertDetail(id: string | null) {
       return res.json() as Promise<AlertDetailResponse>;
     },
     enabled: !!id,
+    refetchInterval: 5000,
   });
 }

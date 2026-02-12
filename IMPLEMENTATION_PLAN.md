@@ -104,7 +104,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
   - Include OHLCV data in response
   - Keep response time under 3 seconds
 
-- [ ] **2.4** Update webhook handler tests `api/webhook.test.ts` - [Medium complexity]
+- [x] **2.4** Update webhook handler tests `api/webhook.test.ts` - [Medium complexity]
   - Test TradingView JSON format with all placeholder fields
   - Test CSV format parsing
   - Test Content-Type header handling

@@ -1,166 +1,271 @@
 # Implementation Plan
 
-**Last Updated:** 2026-02-11T23:33:00Z
+**Last Updated:** 2026-02-11T17:07:00Z
 **Status:** COMPLETE
-**Feature:** Implement Webhook Endpoint (GitHub Issue #1)
+**GitHub Issue:** #2 - Enhanced TradingView Webhook Parsing with OHLCV Data Support
 
 ## Summary
 
-Implement the main TradingView webhook endpoint (`POST /api/webhook`) that receives trading alerts and processes trading signals. The endpoint must validate authentication via a secret, parse and validate the request body, and return appropriate responses.
+This plan implements enhanced TradingView webhook parsing to support OHLCV (Open, High, Low, Close, Volume) data extraction from TradingView alerts. The webhook already handles basic JSON payloads with validation and secret authentication. This enhancement adds:
+
+1. **TradingView-specific JSON parsing** with placeholder variable support (`{{ticker}}`, `{{interval}}`, `{{time}}`, etc.)
+2. **CSV format fallback parsing** for text/plain alerts
+3. **OHLCV data extraction and storage** (database schema updates)
+4. **Ticker to symbol field mapping**
+5. **Comprehensive test coverage** for both formats
 
 ## Specifications Analyzed
 
-- [x] specs/feature-implement-webhook-endpoint.md - Analyzed (primary spec for this feature)
+- [x] `specs/feat-enhanced-tradingview-webhook-parsing-with-ohl.md` - **ACTIVE** - Current feature to implement
+- [x] `specs/feature-implement-webhook-endpoint.md` - **COMPLETE** - Already implemented in PR #1
+- [x] `specs/webhook-api.md` - **REFERENCE** - API specification (used for validation patterns)
+- [x] `specs/dashboard.md` - **FUTURE** - Not in scope for this issue
+- [x] `specs/trading-bot-master-plan.md` - **REFERENCE** - Architecture overview
+- [x] `specs/topstepx-integration.md` - **FUTURE** - Not in scope for this issue
 
 ## Gap Analysis
 
-### What's Specified
+### Currently Implemented ✅
+| Component | Status | Location |
+|-----------|--------|----------|
+| POST `/api/webhook` endpoint | Complete | `api/webhook.ts` |
+| JSON payload validation | Complete | `src/lib/validation.ts` |
+| Secret authentication | Complete | `src/lib/validation.ts` |
+| Structured logging with redaction | Complete | `src/lib/logger.ts` |
+| Type definitions | Complete | `src/types/index.ts` |
+| Unit tests for validation | Complete | `src/lib/validation.test.ts` |
+| Unit tests for webhook handler | Complete | `api/webhook.test.ts` |
 
-The spec requires:
-1. **POST /api/webhook endpoint** that receives TradingView alerts
-2. **Authentication** - Validate `secret` field matches `WEBHOOK_SECRET` env var
-3. **Request validation** - Parse JSON, validate required fields (`secret`, `symbol`, `action`, `quantity`)
-4. **Action validation** - Must be one of: `buy`, `sell`, `close`, `close_long`, `close_short`
-5. **Response format** - Success: `{ success: true, message, data }`, Error: `{ success: false, error, details }`
-6. **Logging** - Log all requests (redact secret), validation errors, and processing results
-7. **Tests** - Tests must pass
+### Missing / Needs Implementation ❌
+| Requirement | Spec Reference | Current State |
+|-------------|----------------|---------------|
+| TradingView JSON parsing with placeholders | feat-enhanced spec | Not implemented - expects strict `symbol` field, not `ticker` |
+| CSV format fallback parsing | feat-enhanced spec | Not implemented - only JSON accepted |
+| OHLCV field extraction (open, high, low, close, volume) | feat-enhanced spec | Not in types or validation |
+| `interval` and `alert_time` field support | feat-enhanced spec | Not in types or validation |
+| Ticker → Symbol field mapping | feat-enhanced spec | Not implemented |
+| Quantity default to 1 | feat-enhanced spec | Currently required field, no default |
+| Content-Type detection (JSON vs text/plain) | feat-enhanced spec | Not implemented |
+| Database integration | feat-enhanced spec | No database configured |
+| Database migration for OHLCV columns | feat-enhanced spec | No ORM/migration system in place |
 
-### What Exists
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| `api/webhook.ts` | ✅ Complete | Webhook endpoint implemented |
-| Type definitions | ✅ Complete | `src/types/index.ts` has `WebhookAlert`, `TradeAction`, `WebhookResponse`, `ValidationError` |
-| Logger | ✅ Complete | `src/lib/logger.ts` with redaction support |
-| Health endpoint | ✅ Complete | `api/health.ts` (reference for Vercel handler pattern) |
-| Validation utilities | ✅ Complete | `src/lib/validation.ts` with validation functions |
-
-### Gap Summary
-
-1. **Missing `api/webhook.ts`** - The main webhook handler file does not exist
-2. **Missing validation logic** - Need to validate request body fields and types
-3. **Missing tests** - No tests for the webhook endpoint
+### Architecture Decisions Required
+1. **Database Choice**: No database is currently configured. Need to add PostgreSQL (Vercel Postgres) or similar
+2. **ORM/Query Builder**: Need to choose Drizzle, Prisma, or raw pg client
+3. **Migration Strategy**: Need migration system for schema changes
 
 ## Prioritized Tasks
 
-### Phase 1: Validation Utilities
+### Phase 1: Type Definitions & Parser Foundation ✅ COMPLETE
 
-- [x] Create `src/lib/validation.ts` - Request body validation functions for WebhookAlert type
-- [x] Create `src/lib/validation.test.ts` - Unit tests for validation functions
+- [x] **1.1** Add TradingView-specific types to `src/types/index.ts` - [Low complexity]
+  - Add `TradingViewAlert` interface with OHLCV fields (ticker, interval, time, open, close, high, low, volume)
+  - Add `OHLCVData` interface for extracted bar data
+  - Add `ParsedWebhookPayload` union type for both formats
 
-### Phase 2: Webhook Endpoint
+- [x] **1.2** Create TradingView parser module `src/lib/tradingview-parser.ts` - [Medium complexity]
+  - Implement `parseJsonPayload()` for TradingView JSON format
+  - Implement `parseCsvPayload()` for CSV fallback format
+  - Implement `detectPayloadFormat()` to auto-detect JSON vs CSV
+  - Map `ticker` → `symbol` field
+  - Default `quantity` to 1 if not provided
+  - Extract OHLCV data (open, high, low, close, volume)
+  - Extract metadata (interval, alert_time)
 
-- [x] Create `api/webhook.ts` - Main webhook handler with auth, validation, and logging
-- [x] Create `api/webhook.test.ts` - Integration tests for webhook endpoint
+- [x] **1.3** Write unit tests for TradingView parser `src/lib/tradingview-parser.test.ts` - [Medium complexity]
+  - Test JSON parsing with all TradingView placeholder fields (40 tests)
+  - Test CSV parsing fallback
+  - Test missing optional fields (graceful defaults)
+  - Test invalid action values
+  - Test quantity defaulting to 1
+  - Test ticker → symbol mapping
+  - Test format detection logic
 
-### Phase 3: Verification
+### Phase 2: Webhook Handler Integration
 
-- [x] Run `npm run validate` - Ensure lint, typecheck, and tests all pass
+- [x] **2.1** Update validation module `src/lib/validation.ts` - [Medium complexity]
+  - Add `validateTradingViewPayload()` function
+  - Accept `ticker` as alternative to `symbol`
+  - Make `quantity` optional (default to 1)
+  - Add optional validation for OHLCV numeric fields
+  - Add optional validation for `interval` string field
+  - Add optional validation for `time` ISO timestamp field
 
-## Task Details
+- [x] **2.2** Update validation tests `src/lib/validation.test.ts` - [Low complexity]
+  - Test ticker → symbol mapping
+  - Test quantity defaulting to 1
+  - Test OHLCV field validation (optional, numeric)
+  - Test interval and time field validation
 
-### Task 1: Create `src/lib/validation.ts`
+- [x] **2.3** Update webhook handler `api/webhook.ts` - [Medium complexity]
+  - Add Content-Type detection (application/json vs text/plain)
+  - Integrate TradingView parser for format detection
+  - Parse both JSON and CSV formats
+  - Include OHLCV data in response
+  - Keep response time under 3 seconds
 
-**Purpose:** Provide reusable validation functions for webhook request bodies.
+- [x] **2.4** Update webhook handler tests `api/webhook.test.ts` - [Medium complexity]
+  - Test TradingView JSON format with all placeholder fields
+  - Test CSV format parsing
+  - Test Content-Type header handling
+  - Test OHLCV data in response
+  - Test quantity default behavior
 
-**Functions to implement:**
-- `validateWebhookSecret(secret: string | undefined): boolean` - Check if secret matches env var
-- `validateWebhookPayload(body: unknown): { valid: boolean; errors?: ValidationError[]; payload?: WebhookAlert }` - Validate all required fields
+### Phase 3: Database Integration
 
-**Requirements:**
-- Check required fields: `secret`, `symbol`, `action`, `quantity`
-- Validate `action` is one of the allowed TradeAction values
-- Validate `quantity` is a positive number
-- Return detailed validation errors with field names
+- [x] **3.1** Set up database configuration - [Medium complexity]
+  - Add `@neondatabase/serverless` dependency to package.json (successor to @vercel/postgres)
+  - Create database connection utility `src/lib/db.ts`
+  - Add database URL environment variable handling (DATABASE_URL, POSTGRES_URL)
+  - Connection pooling handled by Neon serverless driver
 
-### Task 2: Create `src/lib/validation.test.ts`
+- [x] **3.2** Create database schema and migration - [Medium complexity]
+  - Create `migrations/` directory structure
+  - Create initial migration `001_create_alerts_table.sql`
+  - Table: `alerts` with columns:
+    - `id` (UUID, primary key)
+    - `secret_hash` (TEXT) - for auditing, not the actual secret
+    - `symbol` (TEXT, not null)
+    - `action` (TEXT, not null)
+    - `quantity` (INTEGER, not null, default 1)
+    - `interval` (TEXT, nullable)
+    - `alert_time` (TIMESTAMPTZ, nullable)
+    - `open_price` (DECIMAL, nullable)
+    - `high_price` (DECIMAL, nullable)
+    - `low_price` (DECIMAL, nullable)
+    - `close_price` (DECIMAL, nullable)
+    - `bar_volume` (INTEGER, nullable)
+    - `order_type` (TEXT, nullable)
+    - `price` (DECIMAL, nullable)
+    - `stop_loss` (DECIMAL, nullable)
+    - `take_profit` (DECIMAL, nullable)
+    - `comment` (TEXT, nullable)
+    - `status` (TEXT, default 'received')
+    - `created_at` (TIMESTAMPTZ, default now())
+  - Add migration runner script to package.json
 
-**Purpose:** Unit tests for validation functions.
+- [x] **3.3** Create alert storage service `src/services/alert-storage.ts` - [Medium complexity]
+  - Implement `saveAlert()` function
+  - Map parsed webhook data to database columns
+  - Handle database errors gracefully
+  - Return alert ID on success
 
-**Test cases:**
-- Valid payload passes validation
-- Missing required fields return appropriate errors
-- Invalid action type returns error
-- Invalid quantity (negative, zero, non-number) returns error
-- Secret validation works correctly
+- [x] **3.4** Write tests for alert storage `src/services/alert-storage.test.ts` - [Low complexity]
+  - Test successful alert saving
+  - Test with all OHLCV fields populated
+  - Test with minimal required fields
+  - Test error handling
 
-### Task 3: Create `api/webhook.ts`
+### Phase 4: Integration & E2E Testing
 
-**Purpose:** Main webhook endpoint handler.
+- [x] **4.1** Integrate storage into webhook handler - [Low complexity]
+  - Call `saveAlert()` after validation
+  - Return `alertId` in response instead of placeholder
+  - Handle storage errors with appropriate response codes
+  - Maintain response time under 3 seconds
 
-**Implementation:**
-- Only accept POST method (return 405 for others)
-- Parse JSON body (return 400 on parse failure)
-- Validate secret (return 401 if invalid)
-- Validate payload (return 400 with errors if invalid)
-- Log all operations with redacted sensitive data
-- Return success response with processed data
-- Use existing types from `src/types/index.ts`
-- Follow pattern from `api/health.ts`
+- [x] **4.2** Create E2E test suite `tests/e2e/webhook.e2e.test.ts` - [Medium complexity]
+  - Test full webhook flow with TradingView-style JSON payload
+  - Verify OHLCV data saved to database
+  - Verify response within 3 seconds
+  - Test with real database (test container or Vercel Postgres test DB)
 
-**Response codes:**
-- 200: Success
-- 400: Validation error (missing fields, invalid values)
-- 401: Invalid secret
-- 405: Method not allowed
-- 500: Internal server error
+- [x] **4.3** Update response types if needed - [Low complexity]
+  - Update `WebhookResponse` interface to include `alertId` field
+  - Ensure response matches spec format
 
-### Task 4: Create `api/webhook.test.ts`
+### Phase 5: Final Validation ✅ COMPLETE
 
-**Purpose:** Integration tests for webhook endpoint.
+- [x] **5.1** Run full validation suite - [Low complexity]
+  - Run `npm run validate` (lint + typecheck + test)
+  - Fix any linting errors
+  - Fix any type errors
+  - Ensure all tests pass
 
-**Test cases:**
-- Valid POST with correct secret returns 200
-- Missing secret returns 401
-- Invalid secret returns 401
-- Missing required fields return 400 with error details
-- Invalid action returns 400
-- Invalid quantity returns 400
-- Non-POST method returns 405
-- Response format matches specification
-
-### Task 5: Run Validation
-
-**Purpose:** Ensure all code quality checks pass.
-
-**Commands:**
-- `npm run lint` - ESLint with 0 warnings
-- `npm run typecheck` - TypeScript compilation
-- `npm run test` - Vitest tests
+- [x] **5.2** Performance verification - [Low complexity]
+  - Add timing logs to webhook handler
+  - Verify response time under 3 seconds
+  - Document any performance considerations
 
 ## Dependencies
 
 ```
-Task 1 (validation.ts) ─┬─> Task 3 (webhook.ts) ───> Task 5 (validate)
-                        │
-Task 2 (validation.test.ts) ─────────────────────┘
-                        │
-                        └─> Task 4 (webhook.test.ts) ─> Task 5 (validate)
+Phase 1 (Types & Parser)
+    │
+    ├── 1.1 Types ──────────────────────┐
+    │                                    │
+    └── 1.2 Parser ─────────────────────┼──► Phase 2 (Handler Integration)
+         │                               │         │
+         └── 1.3 Parser Tests ──────────┘         │
+                                                   │
+Phase 2 (Handler Integration)                      │
+    │                                              │
+    ├── 2.1 Validation Updates ─────────┐         │
+    │                                    │         │
+    ├── 2.2 Validation Tests ───────────┤         │
+    │                                    │         │
+    ├── 2.3 Handler Updates ────────────┼─────────┘
+    │                                    │
+    └── 2.4 Handler Tests ──────────────┘
+                    │
+                    ▼
+Phase 3 (Database) ─── Can be done in parallel with Phase 2
+    │
+    ├── 3.1 DB Config ──────────────────┐
+    │                                    │
+    ├── 3.2 Schema/Migration ───────────┤
+    │                                    │
+    ├── 3.3 Storage Service ────────────┤
+    │                                    │
+    └── 3.4 Storage Tests ──────────────┘
+                    │
+                    ▼
+Phase 4 (Integration)
+    │
+    ├── 4.1 Integrate Storage ──────────┐
+    │                                    │
+    ├── 4.2 E2E Tests ──────────────────┤
+    │                                    │
+    └── 4.3 Response Types ─────────────┘
+                    │
+                    ▼
+Phase 5 (Validation)
+    │
+    ├── 5.1 Full Validation Suite ──────┐
+    │                                    │
+    └── 5.2 Performance Check ──────────┘
 ```
-
-**Dependency order:**
-1. Task 1 must be completed first (validation utilities needed by webhook)
-2. Tasks 2, 3, 4 can be done in any order after Task 1
-3. Task 5 must be done last (requires all code to be in place)
 
 ## Notes
 
-1. **Existing type definitions are complete** - No changes needed to `src/types/index.ts`
-2. **Logger already supports redaction** - Use existing logger for all logging
-3. **Follow Vercel patterns** - Use `api/health.ts` as reference for handler structure
-4. **Test coverage** - Include both unit tests (validation) and integration tests (endpoint)
-5. **No external dependencies** - Use native TypeScript/JavaScript for validation
+### Important Observations
+
+1. **No Database Currently**: The project has no database integration. This is a significant addition that requires careful setup. Consider using `@vercel/postgres` for seamless Vercel integration.
+
+2. **Response Time Constraint**: TradingView has a 3-second timeout. Database writes should be fast, or consider async/fire-and-forget patterns if needed.
+
+3. **Backward Compatibility**: The existing JSON format with `symbol`, `action`, `quantity` must continue to work. The new TradingView format with `ticker` is additive.
+
+4. **CSV Format Priority**: The spec mentions CSV as a "fallback" format. Prioritize JSON parsing; CSV is secondary.
+
+5. **IP Allowlisting**: The spec mentions TradingView IPs (52.89.214.238, 34.212.75.30, 54.218.53.128, 52.32.178.7) for optional security. This is not required for MVP but could be added later.
+
+6. **Secret in CSV**: The CSV format includes secret as first field. Need to handle secure logging (already have redaction in place).
+
+### Open Questions
+
+1. **Database Provider**: Should we use `@vercel/postgres` (Vercel-native) or `pg` with external PostgreSQL?
+   - **Recommendation**: Use `@vercel/postgres` for simplicity with Vercel deployment
+
+2. **Migration Tool**: Should we use a migration tool (Drizzle, Prisma) or raw SQL files?
+   - **Recommendation**: Start with raw SQL files for simplicity, upgrade later if needed
+
+### Risk Mitigation
+
+- **Performance**: Add database connection pooling from the start
+- **Reliability**: Use try-catch around database operations with fallback to success response
+- **Testing**: Use test database for E2E tests, don't mock database layer
 
 ---
 
-BUILD COMPLETE - All tasks implemented
-
-## Implementation Summary
-
-All tasks have been completed successfully:
-
-1. **src/lib/validation.ts** - Implements `validateWebhookSecret` and `validateWebhookPayload` functions
-2. **src/lib/validation.test.ts** - 20 unit tests covering all validation scenarios
-3. **api/webhook.ts** - Main webhook endpoint handler with auth, validation, and logging
-4. **api/webhook.test.ts** - 17 integration tests covering HTTP methods, auth, and payload validation
-5. **Validation passed** - Lint (0 warnings), TypeScript (no errors), Tests (47 passed)
+*Plan generated for GitHub Issue #2*

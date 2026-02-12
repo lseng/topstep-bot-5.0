@@ -1,26 +1,26 @@
 # TopstepX Trading Bot - Operational Guide
 
 > This file contains operational learnings for AI agents working on this codebase.
-> Keep it brief (~60 lines). Status/progress belongs in IMPLEMENTATION_PLAN.md.
+> Keep it brief (~100 lines). Status/progress belongs in IMPLEMENTATION_PLAN.md.
 
 ## Project Overview
 
-TypeScript/Node.js webhook server that receives TradingView alerts and executes trades on TopstepX via the ProjectX Gateway API. Deployed to Vercel as serverless functions.
+TypeScript/Node.js webhook server that receives TradingView alerts and executes trades on TopstepX via the ProjectX Gateway API. Deployed to Vercel as serverless functions with Supabase for data persistence.
 
 ## Development Workflows
 
 ### Ralph Loop (Specification-Driven)
 ```bash
-./ralph/loop.sh plan [max_iterations]  # Generate/update IMPLEMENTATION_PLAN.md
-./ralph/loop.sh build [max_iterations] # Implement from plan, commit after each task
+./ralph/loop.sh plan    # Generate/update IMPLEMENTATION_PLAN.md (unlimited iterations)
+./ralph/loop.sh build   # Implement from plan (unlimited iterations until complete)
 ```
 
 ### ADW (GitHub Issue-Driven)
 ```bash
 uv run adws/adw_ralph_iso.py <issue-number> [adw-id] [options]
 # Options:
-#   --plan-iterations N   # Planning iterations (default: 3)
-#   --build-iterations N  # Build iterations (default: 10)
+#   --plan-iterations 0   # Unlimited planning iterations
+#   --build-iterations 0  # Unlimited build iterations
 #   --skip-tests          # Skip test phase
 #   --skip-review         # Skip review phase
 ```
@@ -30,75 +30,125 @@ ADW Pipeline: Issue → Spec → Plan → Build → Test → Review → PR → M
 ## Build & Validate Commands
 
 ```bash
-# Development
-npm run dev                    # Start local dev server
-
 # Backpressure (run in this order)
 npm run lint                   # ESLint with 0-warnings policy
 npm run typecheck              # TypeScript check
 npm run test                   # Unit tests (Vitest)
+npm run test:e2e               # End-to-end tests
 
 # Full validation
-npm run validate               # Runs lint + typecheck + test
+npm run validate               # Runs lint + typecheck + test + test:e2e
 ```
 
-## File Structure Patterns
+## Supabase Database Commands
 
+```bash
+# Execute SQL directly (requires SUPABASE_ACCESS_TOKEN in .env.local)
+./scripts/supabase-sql.sh "SELECT * FROM alerts LIMIT 5"
+
+# Run migrations
+export SUPABASE_ACCESS_TOKEN=$(grep SUPABASE_ACCESS_TOKEN .env.local | cut -d= -f2)
+supabase db push               # Push pending migrations
+supabase db dump --schema public  # Dump current schema
+supabase migration list        # List migration status
+
+# Query alerts via REST API
+curl -s "https://mmudpobhfstanoenoumz.supabase.co/rest/v1/alerts?limit=5" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"
 ```
+
+**IMPORTANT**: ADW agents can and should execute SQL directly using these commands. Do NOT ask users to run SQL manually.
+
+## Architecture
+
+### File Structure
+```
+api/                           # Vercel serverless functions (SELF-CONTAINED)
+├── webhook.ts                 # TradingView webhook handler
+├── health.ts                  # Health check endpoint
 src/
-├── api/                       # Vercel API routes (webhook endpoints)
-│   └── webhook.ts            # Main TradingView webhook handler
-├── services/                  # External service integrations
-│   ├── topstepx/             # ProjectX Gateway API client
-│   │   ├── client.ts         # Authentication & HTTP client
-│   │   ├── orders.ts         # Order placement/management
-│   │   ├── positions.ts      # Position tracking
-│   │   └── websocket.ts      # SignalR real-time updates
-│   └── tradingview/          # TradingView alert parsing
-├── lib/                       # Utilities
-│   ├── validation.ts         # Alert validation & sanitization
+├── lib/                       # Shared utilities
+│   ├── supabase.ts           # Supabase client
+│   ├── validation.ts         # Input validation
 │   └── logger.ts             # Structured logging
+├── services/                  # External service clients
+│   └── topstepx/             # ProjectX Gateway API
 ├── types/                     # TypeScript definitions
-└── __tests__/                 # Unit tests (co-located)
+│   ├── index.ts              # Application types
+│   └── database.ts           # Supabase database types
+tests/                         # Test files
+├── *.test.ts                 # Unit tests
+└── e2e/                      # End-to-end tests
 specs/                         # Feature specifications (source of truth)
+supabase/
+└── migrations/               # Database migrations
 ```
 
-## Code Patterns
+### Vercel API Functions
+**CRITICAL**: API functions in `api/*.ts` must be SELF-CONTAINED:
+- Inline all dependencies or use npm packages only
+- Do NOT import from `src/lib/*` (module resolution fails at runtime)
+- Each function compiles independently
 
-- **API Routes**: Vercel edge functions, validate input, return proper HTTP codes
-- **Services**: Async/await, proper error handling, typed responses
-- **Tests**: Vitest for unit/integration, mock external APIs
+## Supabase Database Schema
 
-## TopstepX API Context
+**Project:** mmudpobhfstanoenoumz
+**Tables:**
 
-- **Auth**: JWT tokens from `https://api.topstepx.com/api`
-- **Real-time**: SignalR WebSocket hubs for quotes, orders, positions
-- **Rate Limits**: 60 requests/minute, burst of 10
+### alerts
+Stores incoming TradingView webhook alerts.
+```sql
+id: UUID (PK)
+created_at: TIMESTAMPTZ
+symbol: TEXT
+action: trade_action (enum: buy, sell, close, close_long, close_short)
+quantity: INTEGER
+order_type: order_type (enum: market, limit, stop, stop_limit)
+price: DECIMAL(12,4)
+stop_loss: DECIMAL(12,4)
+take_profit: DECIMAL(12,4)
+comment: TEXT
+status: alert_status (enum: received, processing, executed, failed, cancelled)
+error_message: TEXT
+order_id: TEXT
+executed_at: TIMESTAMPTZ
+raw_payload: JSONB
+```
+
+**CRITICAL**: When implementing features that touch the database:
+1. Check `src/types/database.ts` for existing types
+2. Check `supabase/migrations/` for existing schema
+3. Use existing tables/columns before creating new ones
+4. Update types when modifying schema
 
 ## Environment Variables
 
-- `TOPSTEPX_USERNAME` - ProjectX account username
-- `TOPSTEPX_API_KEY` - ProjectX API key
-- `TOPSTEPX_ACCOUNT_NAME` - Trading account name (optional)
-- `WEBHOOK_SECRET` - Secret for validating TradingView alerts
+| Variable | Description |
+|----------|-------------|
+| `WEBHOOK_SECRET` | Secret for validating TradingView alerts |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
+| `TOPSTEPX_USERNAME` | ProjectX account username |
+| `TOPSTEPX_API_KEY` | ProjectX API key |
+
+## Code Patterns
+
+- **API Routes**: Self-contained, validate input, proper HTTP codes
+- **Services**: Async/await, typed responses, error handling
+- **Database**: Use Supabase client from `src/lib/supabase.ts`
+- **Tests**: Vitest for unit, Playwright/Vitest for e2e
 
 ## Operational Learnings
 
-1. **Don't assume not implemented** - Always grep/search before writing new code
-2. **Validate all webhook input** - Never trust TradingView alert data blindly
-3. **Handle partial fills** - Orders may fill partially; track fill status
-4. **Rate limiting** - Implement backoff for API failures
-5. **Logging** - Structured JSON logs for debugging
-
-## Common Gotchas
-
-1. **JWT Expiry** - Tokens expire; implement refresh logic
-2. **SignalR State** - WebSocket needs reconnection handling
-3. **Order Rejection** - TopstepX may reject orders; handle gracefully
-4. **Time Zones** - TopstepX uses America/Chicago; convert properly
+1. **Don't assume not implemented** - Search codebase before writing new code
+2. **No duplicates** - Reuse existing utilities, types, and patterns
+3. **Major changes = full refactor** - Update all affected code paths
+4. **Database first** - Check schema before implementing data operations
+5. **Self-contained API** - Vercel functions can't import from src/
 
 ## When to Update This File
 
 - Discovered a non-obvious build step
 - Found a pattern that prevents bugs
+- Added new database tables/columns
 - Learned something that would save future loops time

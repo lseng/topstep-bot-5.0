@@ -240,3 +240,53 @@ export interface AlertRecord {
  * Alert processing status
  */
 export type AlertStatus = 'received' | 'processing' | 'executed' | 'failed';
+
+/**
+ * Query parameters for GET /api/alerts
+ */
+export interface AlertsQuery {
+  page?: number;
+  limit?: number;
+  symbol?: string;
+  action?: TradeAction;
+  status?: AlertStatus;
+  sort?: string;
+  order?: 'asc' | 'desc';
+  from?: string;
+  to?: string;
+}
+
+/**
+ * Pagination metadata for list responses
+ */
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/**
+ * Response for GET /api/alerts
+ */
+export interface AlertsResponse {
+  success: true;
+  data: import('./database').AlertRow[];
+  pagination: PaginationMeta;
+}
+
+/**
+ * Response for GET /api/alerts/[id]
+ */
+export interface AlertDetailResponse {
+  success: true;
+  data: import('./database').AlertRow & {
+    ohlcv?: {
+      open: number | null;
+      high: number | null;
+      low: number | null;
+      close: number | null;
+      volume: number | null;
+    };
+  };
+}

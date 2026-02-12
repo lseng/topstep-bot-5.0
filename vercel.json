@@ -20,6 +20,14 @@
       "dest": "/api/webhook.ts"
     },
     {
+      "src": "/api/alerts/(.+)",
+      "dest": "/api/alerts/[id].ts?id=$1"
+    },
+    {
+      "src": "/api/alerts",
+      "dest": "/api/alerts.ts"
+    },
+    {
       "src": "/",
       "dest": "/public/index.html"
     },

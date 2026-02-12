@@ -26,5 +26,5 @@
     }
   },
   "include": ["src/**/*", "api/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "dashboard", "**/*.test.ts"]
 }

@@ -23,5 +23,5 @@ module.exports = {
     '@typescript-eslint/no-floating-promises': 'error',
     'no-console': ['warn', { allow: ['warn', 'error'] }],
   },
-  ignorePatterns: ['dist', 'node_modules', '*.cjs', 'coverage', '*.test.ts', 'vitest.config.ts', 'scripts'],
+  ignorePatterns: ['dist', 'node_modules', '*.cjs', 'coverage', '*.test.ts', 'vitest*.config.ts', 'trees', 'scripts'],
 };

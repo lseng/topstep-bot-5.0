@@ -4,18 +4,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts', 'api/**/*.test.ts', 'tests/**/*.test.ts'],
-    exclude: ['tests/e2e/**/*.test.ts', 'node_modules/**'],
+    include: ['tests/e2e/**/*.test.ts'],
+    testTimeout: 30000, // 30s timeout for e2e tests
+    hookTimeout: 30000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      include: ['src/**/*.ts', 'api/**/*.ts'],
+      include: ['api/**/*.ts'],
       exclude: ['**/*.test.ts', '**/*.d.ts'],
-    },
-  },
-  resolve: {
-    alias: {
-      '@': '/src',
     },
   },
 });

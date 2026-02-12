@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/**/*.ts",
+      "src": "api/*.ts",
       "use": "@vercel/node"
     },
     {
@@ -20,10 +20,6 @@
       "dest": "/api/webhook.ts"
     },
     {
-      "src": "/api/events",
-      "dest": "/api/events.ts"
-    },
-    {
       "src": "/",
       "dest": "/public/index.html"
     },
@@ -31,8 +27,5 @@
       "src": "/(.*)",
       "dest": "/public/$1"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }

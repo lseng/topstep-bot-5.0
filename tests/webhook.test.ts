@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import handler from './webhook';
+import handler from '../api/webhook';
 
 // Mock the logger
 vi.mock('../src/lib/logger', () => ({

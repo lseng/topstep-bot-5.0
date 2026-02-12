@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/*.ts",
+      "src": "api/**/*.ts",
       "use": "@vercel/node"
     },
     {
@@ -18,6 +18,14 @@
     {
       "src": "/api/webhook",
       "dest": "/api/webhook.ts"
+    },
+    {
+      "src": "/api/alerts/(.+)",
+      "dest": "/api/alerts/[id].ts?id=$1"
+    },
+    {
+      "src": "/api/alerts",
+      "dest": "/api/alerts.ts"
     },
     {
       "src": "/",

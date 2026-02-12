@@ -164,7 +164,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
   - Handle storage errors with appropriate response codes
   - Maintain response time under 3 seconds
 
-- [ ] **4.2** Create E2E test suite `tests/e2e/webhook.e2e.test.ts` - [Medium complexity]
+- [x] **4.2** Create E2E test suite `tests/e2e/webhook.e2e.test.ts` - [Medium complexity]
   - Test full webhook flow with TradingView-style JSON payload
   - Verify OHLCV data saved to database
   - Verify response within 3 seconds

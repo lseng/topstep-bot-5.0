@@ -201,3 +201,41 @@ export interface LogEntry {
   message: string;
   data?: Record<string, unknown>;
 }
+
+/**
+ * Database connection status
+ */
+export interface DatabaseStatus {
+  connected: boolean;
+  error?: string;
+}
+
+/**
+ * Alert record stored in database
+ */
+export interface AlertRecord {
+  id: string;
+  secret_hash: string;
+  symbol: string;
+  action: TradeAction;
+  quantity: number;
+  interval?: string | null;
+  alert_time?: Date | null;
+  open_price?: number | null;
+  high_price?: number | null;
+  low_price?: number | null;
+  close_price?: number | null;
+  bar_volume?: number | null;
+  order_type?: OrderType | null;
+  price?: number | null;
+  stop_loss?: number | null;
+  take_profit?: number | null;
+  comment?: string | null;
+  status: AlertStatus;
+  created_at: Date;
+}
+
+/**
+ * Alert processing status
+ */
+export type AlertStatus = 'received' | 'processing' | 'executed' | 'failed';

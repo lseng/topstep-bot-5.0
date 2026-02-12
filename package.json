@@ -15,7 +15,8 @@
     "validate": "npm run lint && npm run typecheck && npm run test"
   },
   "dependencies": {
-    "@microsoft/signalr": "^8.0.0"
+    "@microsoft/signalr": "^8.0.0",
+    "@neondatabase/serverless": "^0.10.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

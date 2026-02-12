@@ -119,7 +119,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
   - Add database URL environment variable handling (DATABASE_URL, POSTGRES_URL)
   - Connection pooling handled by Neon serverless driver
 
-- [ ] **3.2** Create database schema and migration - [Medium complexity]
+- [x] **3.2** Create database schema and migration - [Medium complexity]
   - Create `migrations/` directory structure
   - Create initial migration `001_create_alerts_table.sql`
   - Table: `alerts` with columns:

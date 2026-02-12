@@ -104,7 +104,7 @@ def parse_json(text: str, target_type: Type[T] = None) -> Union[T, Any]:
 
 def check_env_vars(logger: Optional[logging.Logger] = None) -> None:
     """Check that all required environment variables are set."""
-    required_vars = ["ANTHROPIC_API_KEY"]
+    required_vars = ["ANTHROPIC_API_KEY", "GITHUB_PAT"]
     missing_vars = [var for var in required_vars if not os.getenv(var)]
 
     if missing_vars:
@@ -113,10 +113,51 @@ def check_env_vars(logger: Optional[logging.Logger] = None) -> None:
             logger.error(error_msg)
             for var in missing_vars:
                 logger.error(f"  - {var}")
+            logger.error("See .env.example for required variables")
         else:
             print(error_msg, file=sys.stderr)
             for var in missing_vars:
                 print(f"  - {var}", file=sys.stderr)
+            print("See .env.example for required variables", file=sys.stderr)
+        sys.exit(1)
+
+
+def check_required_tools(logger: Optional[logging.Logger] = None) -> None:
+    """Check that all required CLI tools are installed."""
+    import shutil
+    import subprocess
+
+    tools = {
+        "gh": "GitHub CLI - install from https://cli.github.com/",
+        "git": "Git - install from https://git-scm.com/",
+        "claude": "Claude Code CLI - install from https://claude.ai/code",
+    }
+
+    missing_tools = []
+    for tool, description in tools.items():
+        if not shutil.which(tool):
+            missing_tools.append((tool, description))
+
+    # Check gh auth status
+    if shutil.which("gh"):
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            missing_tools.append(("gh auth", "GitHub CLI not authenticated - run: gh auth login"))
+
+    if missing_tools:
+        error_msg = "Error: Missing required tools:"
+        if logger:
+            logger.error(error_msg)
+            for tool, desc in missing_tools:
+                logger.error(f"  - {tool}: {desc}")
+        else:
+            print(error_msg, file=sys.stderr)
+            for tool, desc in missing_tools:
+                print(f"  - {tool}: {desc}", file=sys.stderr)
         sys.exit(1)
 
 

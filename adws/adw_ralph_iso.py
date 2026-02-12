@@ -50,7 +50,7 @@ from adw_modules.workflow_ops import (
     ensure_adw_id,
     find_spec_file,
 )
-from adw_modules.utils import setup_logger, parse_json
+from adw_modules.utils import setup_logger, parse_json, check_env_vars, check_required_tools
 from adw_modules.data_types import (
     GitHubIssue,
     AgentTemplateRequest,
@@ -379,6 +379,10 @@ def merge_to_main(branch_name: str, logger: logging.Logger) -> Tuple[bool, Optio
 def main():
     """Main entry point."""
     load_dotenv()
+
+    # Validate environment and tools before starting
+    check_env_vars()
+    check_required_tools()
 
     if len(sys.argv) < 2:
         print("Usage: uv run adw_ralph_iso.py <issue-number> [adw-id] [--plan-iterations N] [--build-iterations N] [--skip-tests] [--skip-review]")

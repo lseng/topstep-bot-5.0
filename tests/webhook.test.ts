@@ -1,16 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import handler from './webhook';
-
-// Mock the logger
-vi.mock('../src/lib/logger', () => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+import handler from '../api/webhook';
 
 describe('webhook handler', () => {
   let mockReq: Partial<VercelRequest>;
@@ -52,9 +42,9 @@ describe('webhook handler', () => {
   });
 
   describe('HTTP method validation', () => {
-    it('returns 405 for GET requests', () => {
+    it('returns 405 for GET requests', async () => {
       mockReq.method = 'GET';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(405);
       expect(responseData).toEqual({
@@ -64,42 +54,42 @@ describe('webhook handler', () => {
       });
     });
 
-    it('returns 405 for PUT requests', () => {
+    it('returns 405 for PUT requests', async () => {
       mockReq.method = 'PUT';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(405);
     });
 
-    it('returns 405 for DELETE requests', () => {
+    it('returns 405 for DELETE requests', async () => {
       mockReq.method = 'DELETE';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(405);
     });
   });
 
   describe('secret validation', () => {
-    it('returns 401 for missing secret in body', () => {
+    it('returns 400 for missing secret in body', async () => {
       mockReq.body = {
         symbol: 'ES',
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
       expect((responseData as { success: boolean }).success).toBe(false);
     });
 
-    it('returns 401 for invalid secret', () => {
+    it('returns 401 for invalid secret', async () => {
       mockReq.body = {
         secret: 'wrong-secret',
         symbol: 'ES',
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(401);
       expect(responseData).toEqual({
@@ -109,8 +99,8 @@ describe('webhook handler', () => {
       });
     });
 
-    it('returns 200 for valid secret', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns 200 for valid secret', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       expect((responseData as { success: boolean }).success).toBe(true);
@@ -118,94 +108,94 @@ describe('webhook handler', () => {
   });
 
   describe('payload validation', () => {
-    it('returns 400 for missing symbol', () => {
+    it('returns 400 for missing symbol', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
       expect((responseData as { error: string }).error).toBe('Validation failed');
     });
 
-    it('returns 400 for missing action', () => {
+    it('returns 400 for missing action', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for missing quantity', () => {
+    it('returns 400 for missing quantity', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for invalid action', () => {
+    it('returns 400 for invalid action', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'invalid_action',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for negative quantity', () => {
+    it('returns 400 for negative quantity', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
         quantity: -5,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for zero quantity', () => {
+    it('returns 400 for zero quantity', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
         quantity: 0,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
   });
 
   describe('successful requests', () => {
-    it('returns 200 for valid buy request', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns 200 for valid buy request', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       expect((responseData as { success: boolean }).success).toBe(true);
       expect((responseData as { message: string }).message).toBe('Webhook received and validated');
     });
 
-    it('returns correct data structure', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns correct data structure', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       const response = responseData as {
         success: boolean;
         message: string;
         data: {
-          orderId: string;
+          alertId: string;
           symbol: string;
           action: string;
           quantity: number;
@@ -217,11 +207,12 @@ describe('webhook handler', () => {
       expect(response.data.symbol).toBe('ES');
       expect(response.data.action).toBe('buy');
       expect(response.data.quantity).toBe(1);
-      expect(response.data.status).toBe('Pending');
+      expect(response.data.status).toBe('received');
       expect(response.data.timestamp).toBeDefined();
+      expect(response.data.alertId).toBeDefined();
     });
 
-    it('handles all valid action types', () => {
+    it('handles all valid action types', async () => {
       const validActions = ['buy', 'sell', 'close', 'close_long', 'close_short'];
 
       for (const action of validActions) {
@@ -231,15 +222,15 @@ describe('webhook handler', () => {
           action,
           quantity: 1,
         };
-        handler(mockReq as VercelRequest, mockRes as VercelResponse);
+        await handler(mockReq as VercelRequest, mockRes as VercelResponse);
         expect(statusCode).toBe(200);
       }
     });
   });
 
   describe('response format', () => {
-    it('returns success response format correctly', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns success response format correctly', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       const response = responseData as { success: boolean; message?: string; data?: unknown };
       expect(response).toHaveProperty('success', true);
@@ -247,9 +238,9 @@ describe('webhook handler', () => {
       expect(response).toHaveProperty('data');
     });
 
-    it('returns error response format correctly', () => {
+    it('returns error response format correctly', async () => {
       mockReq.body = {};
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       const response = responseData as { success: boolean; error?: string; details?: unknown };
       expect(response).toHaveProperty('success', false);

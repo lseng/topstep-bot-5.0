@@ -95,7 +95,22 @@ def remove_worktree(adw_id: str, logger: logging.Logger) -> Tuple[bool, Optional
 
 
 def setup_worktree_environment(worktree_path: str, backend_port: int, frontend_port: int, logger: logging.Logger) -> None:
-    """Set up worktree environment by creating .ports.env file."""
+    """Set up worktree environment by creating .ports.env file and copying .env.local."""
+    import shutil
+
+    # Get project root to find .env.local
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+
+    # Copy .env.local from project root to worktree (contains Supabase credentials, etc.)
+    env_local_src = os.path.join(project_root, ".env.local")
+    env_local_dst = os.path.join(worktree_path, ".env.local")
+    if os.path.exists(env_local_src) and not os.path.exists(env_local_dst):
+        shutil.copy2(env_local_src, env_local_dst)
+        logger.info(f"Copied .env.local to worktree for Supabase and API credentials")
+
+    # Create .ports.env for port configuration
     ports_env_path = os.path.join(worktree_path, ".ports.env")
 
     with open(ports_env_path, "w") as f:

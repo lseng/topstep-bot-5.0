@@ -97,7 +97,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
   - Test OHLCV field validation (optional, numeric)
   - Test interval and time field validation
 
-- [ ] **2.3** Update webhook handler `api/webhook.ts` - [Medium complexity]
+- [x] **2.3** Update webhook handler `api/webhook.ts` - [Medium complexity]
   - Add Content-Type detection (application/json vs text/plain)
   - Integrate TradingView parser for format detection
   - Parse both JSON and CSV formats

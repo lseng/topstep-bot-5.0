@@ -12,6 +12,18 @@ vi.mock('../src/lib/logger', () => ({
   },
 }));
 
+// Mock the database module
+const mockIsDatabaseConfigured = vi.fn<() => boolean>();
+vi.mock('../src/lib/db', () => ({
+  isDatabaseConfigured: () => mockIsDatabaseConfigured(),
+}));
+
+// Mock the alert storage module
+const mockSaveAlert = vi.fn<() => Promise<string>>();
+vi.mock('../src/services/alert-storage', () => ({
+  saveAlert: (...args: unknown[]) => mockSaveAlert(...args),
+}));
+
 describe('webhook handler', () => {
   let mockReq: Partial<VercelRequest>;
   let mockRes: Partial<VercelResponse>;
@@ -20,6 +32,10 @@ describe('webhook handler', () => {
 
   beforeEach(() => {
     process.env.WEBHOOK_SECRET = 'test-secret-123';
+
+    // Default: database not configured (preserves existing test behavior)
+    mockIsDatabaseConfigured.mockReturnValue(false);
+    mockSaveAlert.mockResolvedValue('test-alert-id');
 
     mockReq = {
       method: 'POST',
@@ -55,9 +71,9 @@ describe('webhook handler', () => {
   });
 
   describe('HTTP method validation', () => {
-    it('returns 405 for GET requests', () => {
+    it('returns 405 for GET requests', async () => {
       mockReq.method = 'GET';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(405);
       expect(responseData).toEqual({
@@ -67,42 +83,42 @@ describe('webhook handler', () => {
       });
     });
 
-    it('returns 405 for PUT requests', () => {
+    it('returns 405 for PUT requests', async () => {
       mockReq.method = 'PUT';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(405);
     });
 
-    it('returns 405 for DELETE requests', () => {
+    it('returns 405 for DELETE requests', async () => {
       mockReq.method = 'DELETE';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(405);
     });
   });
 
   describe('secret validation', () => {
-    it('returns 401 for missing secret in body', () => {
+    it('returns 401 for missing secret in body', async () => {
       mockReq.body = {
         symbol: 'ES',
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
       expect((responseData as { success: boolean }).success).toBe(false);
     });
 
-    it('returns 401 for invalid secret', () => {
+    it('returns 401 for invalid secret', async () => {
       mockReq.body = {
         secret: 'wrong-secret',
         symbol: 'ES',
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(401);
       expect(responseData).toEqual({
@@ -112,8 +128,8 @@ describe('webhook handler', () => {
       });
     });
 
-    it('returns 200 for valid secret', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns 200 for valid secret', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       expect((responseData as { success: boolean }).success).toBe(true);
@@ -121,90 +137,90 @@ describe('webhook handler', () => {
   });
 
   describe('payload validation', () => {
-    it('returns 400 for missing symbol', () => {
+    it('returns 400 for missing symbol', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
       expect((responseData as { error: string }).error).toBe('Validation failed');
     });
 
-    it('returns 400 for missing action', () => {
+    it('returns 400 for missing action', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 200 for missing quantity (defaults to 1)', () => {
+    it('returns 200 for missing quantity (defaults to 1)', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { quantity: number } };
       expect(response.data.quantity).toBe(1);
     });
 
-    it('returns 400 for invalid action', () => {
+    it('returns 400 for invalid action', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'invalid_action',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for negative quantity', () => {
+    it('returns 400 for negative quantity', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
         quantity: -5,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for zero quantity', () => {
+    it('returns 400 for zero quantity', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
         quantity: 0,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
   });
 
   describe('successful requests', () => {
-    it('returns 200 for valid buy request', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns 200 for valid buy request', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       expect((responseData as { success: boolean }).success).toBe(true);
       expect((responseData as { message: string }).message).toBe('Webhook received and validated');
     });
 
-    it('returns correct data structure', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns correct data structure', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       const response = responseData as {
         success: boolean;
@@ -226,7 +242,7 @@ describe('webhook handler', () => {
       expect(response.data.timestamp).toBeDefined();
     });
 
-    it('handles all valid action types', () => {
+    it('handles all valid action types', async () => {
       const validActions = ['buy', 'sell', 'close', 'close_long', 'close_short'];
 
       for (const action of validActions) {
@@ -236,15 +252,15 @@ describe('webhook handler', () => {
           action,
           quantity: 1,
         };
-        handler(mockReq as VercelRequest, mockRes as VercelResponse);
+        await handler(mockReq as VercelRequest, mockRes as VercelResponse);
         expect(statusCode).toBe(200);
       }
     });
   });
 
   describe('response format', () => {
-    it('returns success response format correctly', () => {
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+    it('returns success response format correctly', async () => {
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       const response = responseData as { success: boolean; message?: string; data?: unknown };
       expect(response).toHaveProperty('success', true);
@@ -252,9 +268,9 @@ describe('webhook handler', () => {
       expect(response).toHaveProperty('data');
     });
 
-    it('returns error response format correctly', () => {
+    it('returns error response format correctly', async () => {
       mockReq.body = {};
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       const response = responseData as { success: boolean; error?: string; details?: unknown };
       expect(response).toHaveProperty('success', false);
@@ -264,21 +280,21 @@ describe('webhook handler', () => {
   });
 
   describe('TradingView JSON format', () => {
-    it('accepts ticker field instead of symbol', () => {
+    it('accepts ticker field instead of symbol', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         ticker: 'NQ',
         action: 'buy',
         quantity: 2,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { symbol: string } };
       expect(response.data.symbol).toBe('NQ');
     });
 
-    it('handles all TradingView placeholder fields', () => {
+    it('handles all TradingView placeholder fields', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         action: 'buy',
@@ -292,7 +308,7 @@ describe('webhook handler', () => {
         volume: 12500,
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -318,21 +334,21 @@ describe('webhook handler', () => {
       });
     });
 
-    it('normalizes ticker to uppercase symbol', () => {
+    it('normalizes ticker to uppercase symbol', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         ticker: 'mes',
         action: 'sell',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { symbol: string } };
       expect(response.data.symbol).toBe('MES');
     });
 
-    it('handles partial OHLCV data', () => {
+    it('handles partial OHLCV data', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         ticker: 'ES',
@@ -340,7 +356,7 @@ describe('webhook handler', () => {
         close: 4852.50,
         volume: 12500,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -354,14 +370,14 @@ describe('webhook handler', () => {
       });
     });
 
-    it('includes interval in response when provided', () => {
+    it('includes interval in response when provided', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         ticker: 'ES',
         action: 'buy',
         interval: '15',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -370,14 +386,14 @@ describe('webhook handler', () => {
       expect(response.tradingViewData?.interval).toBe('15');
     });
 
-    it('handles daily interval format', () => {
+    it('handles daily interval format', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         ticker: 'ES',
         action: 'buy',
         interval: 'D',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -388,7 +404,7 @@ describe('webhook handler', () => {
   });
 
   describe('Content-Type handling', () => {
-    it('parses application/json content type as JSON', () => {
+    it('parses application/json content type as JSON', async () => {
       mockReq.headers = { 'content-type': 'application/json' };
       mockReq.body = {
         secret: 'test-secret-123',
@@ -396,15 +412,15 @@ describe('webhook handler', () => {
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
     });
 
-    it('parses text/plain content type as CSV', () => {
+    it('parses text/plain content type as CSV', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = 'test-secret-123, buy, ES, 5, 2026-02-11T10:30:00Z, 4850.25, 4852.50, 4853.00, 4849.75, 12500, 1';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { symbol: string; action: string; quantity: number } };
@@ -413,10 +429,10 @@ describe('webhook handler', () => {
       expect(response.data.quantity).toBe(1);
     });
 
-    it('handles text/plain CSV with OHLCV data in response', () => {
+    it('handles text/plain CSV with OHLCV data in response', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = 'test-secret-123, buy, NQ, 15, 2026-02-11T12:00:00Z, 17500.00, 17550.00, 17560.00, 17490.00, 25000, 2';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -439,10 +455,10 @@ describe('webhook handler', () => {
       });
     });
 
-    it('handles text/plain with minimal CSV fields', () => {
+    it('handles text/plain with minimal CSV fields', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = 'test-secret-123, sell, MES';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { symbol: string; action: string; quantity: number } };
@@ -451,33 +467,33 @@ describe('webhook handler', () => {
       expect(response.data.quantity).toBe(1); // Defaults to 1
     });
 
-    it('returns 400 for invalid CSV format in text/plain', () => {
+    it('returns 400 for invalid CSV format in text/plain', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = 'invalid-csv-no-commas';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('returns 400 for empty text/plain body', () => {
+    it('returns 400 for empty text/plain body', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = '';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(400);
     });
 
-    it('validates secret in CSV format', () => {
+    it('validates secret in CSV format', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = 'wrong-secret, buy, ES';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(401);
     });
   });
 
   describe('OHLCV data in response', () => {
-    it('includes tradingViewData when OHLCV is present', () => {
+    it('includes tradingViewData when OHLCV is present', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
@@ -489,7 +505,7 @@ describe('webhook handler', () => {
         close: 100.75,
         volume: 1000,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -507,7 +523,7 @@ describe('webhook handler', () => {
       });
     });
 
-    it('includes tradingViewData when interval is present', () => {
+    it('includes tradingViewData when interval is present', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
@@ -515,7 +531,7 @@ describe('webhook handler', () => {
         quantity: 1,
         interval: '60',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -524,7 +540,7 @@ describe('webhook handler', () => {
       expect(response.tradingViewData?.interval).toBe('60');
     });
 
-    it('includes tradingViewData when alertTime is present', () => {
+    it('includes tradingViewData when alertTime is present', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
@@ -532,7 +548,7 @@ describe('webhook handler', () => {
         quantity: 1,
         time: '2026-02-11T15:00:00Z',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as {
@@ -541,14 +557,14 @@ describe('webhook handler', () => {
       expect(response.tradingViewData?.alertTime).toBe('2026-02-11T15:00:00.000Z');
     });
 
-    it('does not include tradingViewData when no TradingView-specific fields', () => {
+    it('does not include tradingViewData when no TradingView-specific fields', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
         quantity: 1,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { tradingViewData?: unknown };
@@ -557,64 +573,153 @@ describe('webhook handler', () => {
   });
 
   describe('quantity default behavior', () => {
-    it('defaults quantity to 1 when not provided in JSON', () => {
+    it('defaults quantity to 1 when not provided in JSON', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { quantity: number } };
       expect(response.data.quantity).toBe(1);
     });
 
-    it('defaults quantity to 1 when not provided with ticker', () => {
+    it('defaults quantity to 1 when not provided with ticker', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         ticker: 'NQ',
         action: 'sell',
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { quantity: number } };
       expect(response.data.quantity).toBe(1);
     });
 
-    it('defaults quantity to 1 in CSV format', () => {
+    it('defaults quantity to 1 in CSV format', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = 'test-secret-123, buy, ES';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { quantity: number } };
       expect(response.data.quantity).toBe(1);
     });
 
-    it('uses provided quantity when specified', () => {
+    it('uses provided quantity when specified', async () => {
       mockReq.body = {
         secret: 'test-secret-123',
         symbol: 'ES',
         action: 'buy',
         quantity: 5,
       };
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { quantity: number } };
       expect(response.data.quantity).toBe(5);
     });
 
-    it('uses provided quantity in CSV format', () => {
+    it('uses provided quantity in CSV format', async () => {
       mockReq.headers = { 'content-type': 'text/plain' };
       mockReq.body = 'test-secret-123, buy, ES, 5, 2026-02-11T10:30:00Z, 100, 101, 102, 99, 1000, 10';
-      handler(mockReq as VercelRequest, mockRes as VercelResponse);
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
 
       expect(statusCode).toBe(200);
       const response = responseData as { data: { quantity: number } };
       expect(response.data.quantity).toBe(10);
+    });
+  });
+
+  describe('database storage integration', () => {
+    it('saves alert to database when configured', async () => {
+      mockIsDatabaseConfigured.mockReturnValue(true);
+      mockSaveAlert.mockResolvedValue('abc-123-uuid');
+
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      expect(mockSaveAlert).toHaveBeenCalledOnce();
+      const response = responseData as { data: { alertId: string } };
+      expect(response.data.alertId).toBe('abc-123-uuid');
+    });
+
+    it('does not save to database when not configured', async () => {
+      mockIsDatabaseConfigured.mockReturnValue(false);
+
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      expect(mockSaveAlert).not.toHaveBeenCalled();
+      const response = responseData as { data: { alertId?: string } };
+      expect(response.data.alertId).toBeUndefined();
+    });
+
+    it('returns 500 when database save fails', async () => {
+      mockIsDatabaseConfigured.mockReturnValue(true);
+      mockSaveAlert.mockRejectedValue(new Error('Connection refused'));
+
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(500);
+      const response = responseData as { success: boolean; error: string; details: string };
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Storage error');
+      expect(response.details).toBe('Failed to persist alert');
+    });
+
+    it('passes correct payload to saveAlert', async () => {
+      mockIsDatabaseConfigured.mockReturnValue(true);
+      mockSaveAlert.mockResolvedValue('test-id');
+
+      mockReq.body = {
+        secret: 'test-secret-123',
+        ticker: 'NQ',
+        action: 'buy',
+        quantity: 3,
+        interval: '5',
+        time: '2026-02-11T10:30:00Z',
+        open: 4850.25,
+        close: 4852.50,
+        high: 4853.00,
+        low: 4849.75,
+        volume: 12500,
+      };
+
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      expect(mockSaveAlert).toHaveBeenCalledOnce();
+      const savedPayload = mockSaveAlert.mock.calls[0][0];
+      expect(savedPayload.symbol).toBe('NQ');
+      expect(savedPayload.action).toBe('buy');
+      expect(savedPayload.quantity).toBe(3);
+      expect(savedPayload.interval).toBe('5');
+      expect(savedPayload.ohlcv).toEqual({
+        open: 4850.25,
+        close: 4852.50,
+        high: 4853.00,
+        low: 4849.75,
+        volume: 12500,
+      });
+    });
+
+    it('does not call saveAlert before secret validation', async () => {
+      mockIsDatabaseConfigured.mockReturnValue(true);
+      mockReq.body = {
+        secret: 'wrong-secret',
+        symbol: 'ES',
+        action: 'buy',
+        quantity: 1,
+      };
+
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(401);
+      expect(mockSaveAlert).not.toHaveBeenCalled();
     });
   });
 });

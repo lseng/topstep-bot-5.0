@@ -158,7 +158,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
 
 ### Phase 4: Integration & E2E Testing
 
-- [ ] **4.1** Integrate storage into webhook handler - [Low complexity]
+- [x] **4.1** Integrate storage into webhook handler - [Low complexity]
   - Call `saveAlert()` after validation
   - Return `alertId` in response instead of placeholder
   - Handle storage errors with appropriate response codes
@@ -170,7 +170,7 @@ This plan implements enhanced TradingView webhook parsing to support OHLCV (Open
   - Verify response within 3 seconds
   - Test with real database (test container or Vercel Postgres test DB)
 
-- [ ] **4.3** Update response types if needed - [Low complexity]
+- [x] **4.3** Update response types if needed - [Low complexity]
   - Update `WebhookResponse` interface to include `alertId` field
   - Ensure response matches spec format
 

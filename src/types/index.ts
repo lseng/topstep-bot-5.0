@@ -168,6 +168,7 @@ export interface WebhookResponse {
   message?: string;
   error?: string;
   data?: {
+    alertId?: string;
     orderId: string;
     symbol: string;
     action: TradeAction;

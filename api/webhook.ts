@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { logger } from '../src/lib/logger';
 import { validateWebhookSecret, validateTradingViewPayload } from '../src/lib/validation';
 import { parseWebhookPayload } from '../src/lib/tradingview-parser';
+import { saveAlert } from '../src/services/alert-storage';
+import { isDatabaseConfigured } from '../src/lib/db';
 import type { WebhookResponse, ParsedWebhookPayload } from '../src/types';
 
 /**
@@ -27,7 +29,7 @@ function getBodyContent(req: VercelRequest): string | null {
   return null;
 }
 
-export default function handler(req: VercelRequest, res: VercelResponse): void {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   // Only accept POST requests
   if (req.method !== 'POST') {
     logger.warn('Method not allowed', { method: req.method });
@@ -114,8 +116,27 @@ export default function handler(req: VercelRequest, res: VercelResponse): void {
     hasOhlcv: !!payload.ohlcv,
   });
 
+  // Persist alert to database if configured
+  let alertId: string | undefined;
+  if (isDatabaseConfigured()) {
+    try {
+      alertId = await saveAlert(payload);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown storage error';
+      logger.error('Failed to save alert to database', { error: errorMessage });
+      const response: WebhookResponse = {
+        success: false,
+        error: 'Storage error',
+        details: 'Failed to persist alert',
+      };
+      res.status(500).json(response);
+      return;
+    }
+  }
+
   // Build response data with OHLCV information
   const responseData: WebhookResponse['data'] = {
+    alertId,
     orderId: 'pending',
     symbol: payload.symbol,
     action: payload.action,
@@ -133,7 +154,6 @@ export default function handler(req: VercelRequest, res: VercelResponse): void {
   };
 
   // Add OHLCV data to response if present (for debugging/logging purposes)
-  // The OHLCV data will be stored in the database in a future phase
   if (payload.ohlcv || payload.interval || payload.alertTime) {
     const extendedResponse = response as WebhookResponse & {
       tradingViewData?: {

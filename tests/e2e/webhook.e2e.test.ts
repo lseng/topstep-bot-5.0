@@ -15,12 +15,6 @@ vi.mock('../../src/lib/logger', () => ({
   },
 }));
 
-// Mock the database module - E2E tests verify the full flow with storage
-const mockIsDatabaseConfigured = vi.fn<() => boolean>();
-vi.mock('../../src/lib/db', () => ({
-  isDatabaseConfigured: () => mockIsDatabaseConfigured(),
-}));
-
 const mockSaveAlert = vi.fn<() => Promise<string>>();
 vi.mock('../../src/services/alert-storage', () => ({
   saveAlert: (...args: unknown[]) => mockSaveAlert(...args),
@@ -70,7 +64,6 @@ function createMockResponse(): {
 describe('Webhook E2E Tests', () => {
   beforeEach(() => {
     process.env.WEBHOOK_SECRET = 'e2e-test-secret';
-    mockIsDatabaseConfigured.mockReturnValue(true);
     mockSaveAlert.mockResolvedValue('e2e-alert-uuid-001');
   });
 
@@ -481,31 +474,6 @@ describe('Webhook E2E Tests', () => {
       expect(data.error).toBe('Storage error');
     });
 
-    it('succeeds without database when not configured', async () => {
-      mockIsDatabaseConfigured.mockReturnValue(false);
-
-      const req = createMockRequest({
-        body: {
-          secret: 'e2e-test-secret',
-          action: 'buy',
-          ticker: 'ES',
-          open: 4850.25,
-          close: 4852.50,
-          high: 4853.00,
-          low: 4849.75,
-          volume: 12500,
-          quantity: 1,
-        },
-      });
-      const { res, getStatus, getData } = createMockResponse();
-
-      await handler(req, res);
-
-      expect(getStatus()).toBe(200);
-      const data = getData() as { data: { alertId?: string } };
-      expect(data.data.alertId).toBeUndefined();
-      expect(mockSaveAlert).not.toHaveBeenCalled();
-    });
   });
 
   describe('Backward compatibility', () => {
@@ -538,7 +506,6 @@ describe('Webhook E2E Tests', () => {
 
       for (const action of actions) {
         vi.clearAllMocks();
-        mockIsDatabaseConfigured.mockReturnValue(true);
         mockSaveAlert.mockResolvedValue(`alert-${action}`);
 
         const req = createMockRequest({

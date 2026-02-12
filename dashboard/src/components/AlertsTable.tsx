@@ -165,7 +165,7 @@ function ExpandedRow({ row }: { row: Row<AlertRow> }) {
   const raw = alert.raw_payload;
   const ohlcv = extractOHLCV(raw);
   const interval = typeof raw.interval === 'string' ? raw.interval : undefined;
-  const alertTime = typeof raw.time === 'string' ? raw.time : undefined;
+  const alertTime = typeof raw.alertTime === 'string' ? raw.alertTime : undefined;
 
   return (
     <AlertDetailPanel

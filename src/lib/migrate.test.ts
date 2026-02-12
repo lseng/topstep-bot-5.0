@@ -21,20 +21,12 @@ describe('migrate', () => {
   });
 
   describe('getMigrationFiles', () => {
-    it('returns sorted SQL files from migrations directory', () => {
+    it('returns empty array when migrations directory has no SQL files', () => {
+      // Old Neon migrations were removed — Supabase migrations live in supabase/migrations/
       const migrationsDir = join(import.meta.dirname, '../../migrations');
       const files = getMigrationFiles(migrationsDir);
 
-      expect(files).toContain('001_create_alerts_table.sql');
-      expect(files.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('returns sorted files', () => {
-      const migrationsDir = join(import.meta.dirname, '../../migrations');
-      const files = getMigrationFiles(migrationsDir);
-
-      const sorted = [...files].sort();
-      expect(files).toEqual(sorted);
+      expect(files).toEqual([]);
     });
 
     it('returns empty array for non-existent directory', () => {
@@ -43,9 +35,11 @@ describe('migrate', () => {
     });
 
     it('filters only .sql files', () => {
-      const migrationsDir = join(import.meta.dirname, '../../migrations');
+      // Uses supabase/migrations which has real SQL files
+      const migrationsDir = join(import.meta.dirname, '../../supabase/migrations');
       const files = getMigrationFiles(migrationsDir);
 
+      expect(files.length).toBeGreaterThanOrEqual(1);
       for (const file of files) {
         expect(file).toMatch(/\.sql$/);
       }
@@ -63,40 +57,21 @@ describe('migrate', () => {
       expect(result.skipped).toEqual([]);
     });
 
-    it('applies pending migrations when database is configured', async () => {
+    it('reports no migrations when directory is empty', async () => {
       process.env.DATABASE_URL = 'postgres://localhost:5432/test';
 
-      // First call: CREATE TABLE migrations
-      // Second call: SELECT applied migrations (returns empty)
-      // Then calls for each SQL statement in the migration
-      // Then INSERT into migrations table
       mockSqlFn
         .mockResolvedValueOnce([]) // CREATE TABLE migrations
         .mockResolvedValueOnce([]) // SELECT applied migrations
-        .mockResolvedValue([]); // All subsequent calls
-
-      const migrationsDir = join(import.meta.dirname, '../../migrations');
-      const result = await runMigrations(migrationsDir);
-
-      expect(result.error).toBeUndefined();
-      expect(result.applied).toContain('001_create_alerts_table');
-      expect(result.skipped).toEqual([]);
-    });
-
-    it('skips already-applied migrations', async () => {
-      process.env.DATABASE_URL = 'postgres://localhost:5432/test';
-
-      mockSqlFn
-        .mockResolvedValueOnce([]) // CREATE TABLE migrations
-        .mockResolvedValueOnce([{ name: '001_create_alerts_table' }]) // SELECT applied
         .mockResolvedValue([]);
 
+      // Old Neon migrations removed — directory is empty
       const migrationsDir = join(import.meta.dirname, '../../migrations');
       const result = await runMigrations(migrationsDir);
 
       expect(result.error).toBeUndefined();
       expect(result.applied).toEqual([]);
-      expect(result.skipped).toContain('001_create_alerts_table');
+      expect(result.skipped).toEqual([]);
     });
 
     it('handles database errors gracefully', async () => {

@@ -45,7 +45,7 @@ export async function saveAlert(payload: ParsedWebhookPayload): Promise<string> 
       action: payload.action,
       quantity: payload.quantity,
       order_type: payload.orderType ?? 'market',
-      price: payload.price ?? null,
+      price: payload.price ?? payload.ohlcv?.open ?? null,
       stop_loss: payload.stopLoss ?? null,
       take_profit: payload.takeProfit ?? null,
       comment: payload.comment ?? null,

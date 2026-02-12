@@ -2,7 +2,6 @@
   "name": "topstep-bot",
   "version": "0.1.0",
   "description": "TradingView webhook to TopstepX trading bot",
-  "type": "module",
   "scripts": {
     "dev": "vercel dev",
     "build": "npm run dashboard:build && tsc",

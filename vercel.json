@@ -7,6 +7,14 @@
       "destination": "/api/alerts/[id]"
     },
     {
+      "source": "/api/positions",
+      "destination": "/api/positions"
+    },
+    {
+      "source": "/api/trades-log",
+      "destination": "/api/trades-log"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

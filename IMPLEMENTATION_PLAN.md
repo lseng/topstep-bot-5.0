@@ -111,9 +111,9 @@ Build a complete autonomous trading pipeline on top of the existing webhook→VP
 
 ### Phase 7: API Endpoints
 
-- [ ] **7.1** Create `api/positions.ts` — `GET /api/positions` — Self-contained Vercel function. Query params: `symbol`, `state`, `side`, `page`, `limit`, `sort`, `order`. Returns paginated `PositionRow[]` with metadata. Inline Supabase client (no src/ imports per AGENTS.md rules).
-- [ ] **7.2** Create `api/trades-log.ts` — `GET /api/trades-log` — Self-contained Vercel function. Query params: `symbol`, `side`, `from`, `to`, `page`, `limit`, `sort`, `order`. Returns paginated `TradesLogRow[]` with metadata. Inline Supabase client.
-- [ ] **7.3** Update `vercel.json` — Add rewrites for `/api/positions` and `/api/trades-log`
+- [x] **7.1** Create `api/positions.ts` — `GET /api/positions` — Self-contained Vercel function. Query params: `symbol`, `state`, `side`, `page`, `limit`, `sort`, `order`. Returns paginated `PositionRow[]` with metadata. Inline Supabase client (no src/ imports per AGENTS.md rules).
+- [x] **7.2** Create `api/trades-log.ts` — `GET /api/trades-log` — Self-contained Vercel function. Query params: `symbol`, `side`, `from`, `to`, `page`, `limit`, `sort`, `order`. Returns paginated `TradesLogRow[]` with metadata. Inline Supabase client.
+- [x] **7.3** Update `vercel.json` — Add rewrites for `/api/positions` and `/api/trades-log`
 
 ### Phase 8: Dashboard Updates
 

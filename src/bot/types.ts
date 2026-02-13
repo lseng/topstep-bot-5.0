@@ -82,6 +82,8 @@ export interface ManagedPosition {
   originalAlertId: string;
   /** Pre-calculated stepped entry levels for retries */
   retryEntryLevels: number[];
+  /** Strategy name for this position (e.g. 'vpvr', 'scalper'). Default: 'vpvr'. */
+  strategy: string;
 }
 
 /** Bot configuration */
@@ -94,7 +96,7 @@ export interface BotConfig {
   dryRun: boolean;
   /** Interval in ms to flush dirty positions to Supabase (default: 5000) */
   writeIntervalMs: number;
-  /** Trading symbols (e.g. ['MES', 'MNQ', 'MYM']) */
+  /** Trading symbols. Empty array = accept all known symbols dynamically. */
   symbols: string[];
   /** Number of contracts per trade (default: 1) */
   quantity: number;
@@ -104,6 +106,8 @@ export interface BotConfig {
   maxRetries: number;
   /** Fixed stop-loss buffer in ticks (default: 8) */
   slBufferTicks: number;
+  /** Interval in ms for position reconciliation polling (default: 60000). 0 = disabled. */
+  syncIntervalMs: number;
 }
 
 /** Result of a completed trade, used for logging */

@@ -2,12 +2,12 @@
 
 import { logger } from '../lib/logger';
 import { getSupabase } from '../lib/supabase';
-import { authenticate, getToken } from '../services/topstepx/client';
+import { authenticate, getToken, getCurrentContractId, getPositions } from '../services/topstepx/client';
 import { UserHubConnection, MarketHubConnection } from '../services/topstepx/streaming';
 import { calculateVpvr } from '../services/vpvr/calculator';
 import { fetchBars } from '../services/confirmation/engine';
-import { OrderStatusNum } from '../services/topstepx/types';
-import type { GatewayOrderEvent, GatewayQuoteEvent } from '../services/topstepx/types';
+import { OrderStatusNum, CONTRACT_SPECS } from '../services/topstepx/types';
+import type { GatewayOrderEvent, GatewayQuoteEvent, GatewayPositionEvent } from '../services/topstepx/types';
 import type { AlertRow } from '../types/database';
 import type { BotConfig, ManagedPosition, PositionState, PositionSide, TradeResult } from './types';
 import { PositionManager } from './position-manager';
@@ -38,6 +38,9 @@ export class BotRunner {
 
   /** Track pending retry order IDs: symbol → { steppedOrderId, fallbackOrderId } */
   private retryOrders = new Map<string, { steppedOrderId: number; fallbackOrderId: number }>();
+
+  /** Position reconciliation timer */
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -99,6 +102,17 @@ export class BotRunner {
     // Start write queue
     this.writeQueue.start();
 
+    // Start position reconciliation polling
+    if (this.config.syncIntervalMs > 0) {
+      this.syncInterval = setInterval(() => {
+        this.reconcilePositions().catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Position reconciliation failed', { error: msg });
+        });
+      }, this.config.syncIntervalMs);
+      logger.info('Position sync enabled', { intervalMs: this.config.syncIntervalMs });
+    }
+
     logger.info('Bot running', {
       symbols: this.config.symbols,
       contracts: Array.from(this.config.contractIds.values()),
@@ -111,6 +125,11 @@ export class BotRunner {
     this.running = false;
 
     logger.info('Bot stopping...');
+
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
 
     await this.alertListener.stop();
     this.writeQueue.stop();
@@ -152,9 +171,36 @@ export class BotRunner {
   // ─── Event Wiring ──────────────────────────────────────────────────────────
 
   private wireEvents(): void {
-    // Alert listener → Position manager (only configured symbols)
+    // Alert listener → Position manager (dynamic symbol handling)
     this.alertListener.on('newAlert', (alert: AlertRow) => {
-      if (!this.config.symbols.includes(alert.symbol)) return;
+      // If symbols list is non-empty, filter to only those symbols
+      if (this.config.symbols.length > 0 && !this.config.symbols.includes(alert.symbol)) return;
+
+      // Dynamic symbol resolution: if symbol not yet in contractIds, try to resolve it
+      if (!this.config.contractIds.has(alert.symbol)) {
+        if (!CONTRACT_SPECS[alert.symbol.toUpperCase()]) {
+          logger.warn('Unknown symbol, skipping alert', { symbol: alert.symbol, alertId: alert.id });
+          return;
+        }
+
+        // Resolve contract ID dynamically
+        try {
+          const contractId = getCurrentContractId(alert.symbol);
+          this.config.contractIds.set(alert.symbol, contractId);
+          this.contractToSymbol.set(contractId, alert.symbol);
+          // Subscribe to market data for the new symbol
+          this.marketHub.subscribe(contractId).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : 'unknown';
+            logger.error('Failed to subscribe to dynamic symbol', { symbol: alert.symbol, error: msg });
+          });
+          logger.info('Dynamically resolved symbol', { symbol: alert.symbol, contractId });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Failed to resolve contract ID for symbol', { symbol: alert.symbol, error: msg });
+          return;
+        }
+      }
+
       this.handleNewAlert(alert).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'unknown';
         logger.error('Failed to handle alert', { alertId: alert.id, error: msg });
@@ -167,6 +213,26 @@ export class BotRunner {
         // Check if this is a retry fill — cancel the other order
         this.handleRetryFill(event.orderId);
         this.positionManager.onOrderFill(event.orderId, event.fillPrice);
+      }
+    };
+
+    // User Hub → Position manager (position updates — detects exchange-side closes like EOD)
+    this.userHub.onPositionUpdate = (event: GatewayPositionEvent): void => {
+      const symbol = this.contractToSymbol.get(event.contractId);
+      if (!symbol) return;
+
+      // If exchange reports size=0 but bot thinks position is active, close it
+      if (event.size === 0) {
+        const pos = this.positionManager.positions.get(symbol);
+        if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
+          const exitPrice = event.averagePrice || pos.lastPrice || 0;
+          logger.info('Exchange position closed (detected via UserHub)', {
+            symbol,
+            contractId: event.contractId,
+            exitPrice,
+          });
+          this.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+        }
       }
     };
 
@@ -413,6 +479,71 @@ export class BotRunner {
         this.retryOrders.delete(symbol);
         return;
       }
+    }
+  }
+
+  /**
+   * Reconcile bot position state with actual exchange positions.
+   * Detects EOD auto-liquidation and other exchange-side closes.
+   */
+  async reconcilePositions(): Promise<void> {
+    if (!this.running) return;
+
+    try {
+      const exchangePositions = await getPositions(this.config.accountId);
+
+      // Build a set of contractIds that have non-zero size on the exchange
+      const exchangeOpen = new Set<string>();
+      for (const pos of exchangePositions) {
+        if (pos.size !== 0) {
+          exchangeOpen.add(pos.contractId);
+        }
+      }
+
+      // Check each bot position against exchange state
+      for (const [symbol, botPos] of this.positionManager.positions.entries()) {
+        if (botPos.state === 'closed' || botPos.state === 'cancelled') continue;
+
+        const contractId = this.config.contractIds.get(symbol);
+        if (!contractId) continue;
+
+        // Bot thinks position is active but exchange has no position
+        if (!exchangeOpen.has(contractId)) {
+          const exitPrice = botPos.lastPrice ?? botPos.currentSl ?? 0;
+          logger.info('Position reconciliation: exchange position closed', {
+            symbol,
+            contractId,
+            botState: botPos.state,
+            exitPrice,
+          });
+          this.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+        }
+      }
+
+      // Check for exchange positions the bot doesn't know about
+      for (const exPos of exchangePositions) {
+        if (exPos.size === 0) continue;
+        const symbol = this.contractToSymbol.get(exPos.contractId);
+        if (!symbol) {
+          logger.warn('Exchange position for unknown contract', {
+            contractId: exPos.contractId,
+            size: exPos.size,
+          });
+          continue;
+        }
+        const botPos = this.positionManager.positions.get(symbol);
+        if (!botPos || botPos.state === 'closed' || botPos.state === 'cancelled') {
+          logger.warn('Exchange has position bot does not track (manual trade?)', {
+            symbol,
+            contractId: exPos.contractId,
+            size: exPos.size,
+            averagePrice: exPos.averagePrice,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      logger.error('Position reconciliation error', { error: msg });
     }
   }
 

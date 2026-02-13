@@ -65,6 +65,7 @@ export interface PositionManagerEvents {
 export interface PositionManagerConfig {
   accountId: number;
   contractIds: Map<string, string>;
+  /** Trading symbols. Empty = accept all known symbols dynamically. */
   symbols: string[];
   quantity: number;
   /** Maximum contracts allowed across all symbols in micro-equivalent units (default: 30) */
@@ -451,6 +452,7 @@ export class PositionManager extends EventEmitter {
       maxRetries: this.config.maxRetries,
       originalAlertId: alert.id,
       retryEntryLevels: retryLevels,
+      strategy: (alert.strategy ?? (alert.raw_payload?.strategy as string | undefined)) || 'vpvr',
     };
   }
 

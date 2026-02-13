@@ -124,6 +124,9 @@ export function parseTradingViewAlert(
   if (data.comment) {
     payload.comment = data.comment;
   }
+  if (data.strategy && typeof data.strategy === 'string') {
+    payload.strategy = data.strategy;
+  }
 
   return { success: true, payload };
 }

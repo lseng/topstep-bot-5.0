@@ -74,6 +74,7 @@ describe('Backtest (e2e)', () => {
         order_id: null,
         executed_at: null,
         raw_payload: {},
+        strategy: null,
         updated_at: '2026-01-15T09:30:00Z',
       },
     ];

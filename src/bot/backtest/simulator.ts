@@ -238,6 +238,7 @@ function simulateRetries(
       maxRetries: cfg.maxRetries,
       originalAlertId: alert.id,
       retryEntryLevels: retryLevels,
+      strategy: 'vpvr',
     };
 
     const tpProgression: string[] = [];
@@ -448,6 +449,7 @@ export function simulateTrade(
     maxRetries: cfg.maxRetries,
     originalAlertId: alert.id,
     retryEntryLevels: [],
+    strategy: 'vpvr',
   };
 
   const tpProgression: string[] = [];

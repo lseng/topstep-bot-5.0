@@ -87,6 +87,7 @@ const defaultConfig: BotConfig = {
   writeIntervalMs: 5000,
   symbols: ['ES'],
   quantity: 1,
+  maxContracts: 30,
 };
 
 describe('Bot Lifecycle (e2e)', () => {

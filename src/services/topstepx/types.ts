@@ -350,6 +350,21 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
   },
 };
 
+/**
+ * Mini symbols that are equivalent to 10 micro contracts.
+ * Used for position sizing: 1 mini = 10 micro-equivalent units.
+ */
+export const MINI_SYMBOLS = new Set(['ES', 'NQ']);
+
+/**
+ * Get the micro-equivalent unit count for a symbol.
+ * Mini contracts (ES, NQ) = 10 micro-equivalent units each.
+ * Micro contracts (MES, MNQ, MYM, MGC, MCL, MBT) = 1 micro-equivalent unit each.
+ */
+export function getMicroEquivalent(symbol: string, quantity: number): number {
+  return MINI_SYMBOLS.has(symbol) ? quantity * 10 : quantity;
+}
+
 /** Futures month codes: month number → letter */
 export const EXPIRY_CODES: Record<number, string> = {
   1: 'F',

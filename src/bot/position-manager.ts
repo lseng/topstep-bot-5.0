@@ -7,7 +7,7 @@ import type { ManagedPosition, PositionState, PositionSide, TradeResult } from '
 import type { EntryCalculation } from './entry-calculator';
 import { calculateEntryPrice } from './entry-calculator';
 import { evaluateTrailingStop } from './trailing-stop';
-import { CONTRACT_SPECS } from '../services/topstepx/types';
+import { CONTRACT_SPECS, getMicroEquivalent } from '../services/topstepx/types';
 
 /** Events emitted by the PositionManager */
 export interface PositionManagerEvents {
@@ -41,6 +41,13 @@ export interface PositionManagerEvents {
   }) => void;
   /** Position fully closed — trade result for logging */
   positionClosed: (trade: TradeResult) => void;
+  /** Alert skipped because position capacity has been reached */
+  capacityExceeded: (params: {
+    symbol: string;
+    currentMicroEquivalent: number;
+    maxMicroEquivalent: number;
+    requiredMicroEquivalent: number;
+  }) => void;
 }
 
 /** Configuration for the position manager */
@@ -49,6 +56,8 @@ export interface PositionManagerConfig {
   contractIds: Map<string, string>;
   symbols: string[];
   quantity: number;
+  /** Maximum contracts allowed across all symbols in micro-equivalent units (default: 30) */
+  maxContracts: number;
 }
 
 /**
@@ -101,6 +110,25 @@ export class PositionManager extends EventEmitter {
         // Close active position
         this.closeExisting(existing, 'opposing_alert');
       }
+    }
+
+    // Check capacity before placing a new order
+    const requiredMicro = getMicroEquivalent(symbol, this.config.quantity);
+    const currentMicro = this.getCurrentMicroEquivalent();
+    // Subtract any capacity freed by cancelling/closing the same-symbol position above
+    const existingMicro = existing && existing.state !== 'closed' && existing.state !== 'cancelled'
+      ? getMicroEquivalent(existing.symbol, existing.quantity)
+      : 0;
+    const effectiveCurrent = currentMicro - existingMicro;
+
+    if (effectiveCurrent + requiredMicro > this.config.maxContracts) {
+      this.emit('capacityExceeded', {
+        symbol,
+        currentMicroEquivalent: effectiveCurrent,
+        maxMicroEquivalent: this.config.maxContracts,
+        requiredMicroEquivalent: requiredMicro,
+      });
+      return;
     }
 
     // Calculate entry from VPVR
@@ -254,6 +282,21 @@ export class PositionManager extends EventEmitter {
         break;
       }
     }
+  }
+
+  /**
+   * Get the total micro-equivalent contract count across all active positions.
+   * Mini contracts (ES, NQ) count as 10 micro-equivalent units each.
+   * Micro contracts count as 1 micro-equivalent unit each.
+   */
+  getCurrentMicroEquivalent(): number {
+    let total = 0;
+    for (const pos of this.positions.values()) {
+      if (pos.state !== 'closed' && pos.state !== 'cancelled') {
+        total += getMicroEquivalent(pos.symbol, pos.quantity);
+      }
+    }
+    return total;
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────

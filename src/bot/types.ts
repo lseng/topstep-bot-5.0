@@ -89,6 +89,8 @@ export interface BotConfig {
   symbols: string[];
   /** Number of contracts per trade (default: 1) */
   quantity: number;
+  /** Maximum contracts allowed across all symbols in micro-equivalent units (default: 30) */
+  maxContracts: number;
 }
 
 /** Result of a completed trade, used for logging */

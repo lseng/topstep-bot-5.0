@@ -50,6 +50,7 @@ const multiConfig: BacktestConfig = {
   symbols: ['MES', 'MNQ'],
   quantity: 1,
   verbose: true,
+  maxContracts: 0,
 };
 
 describe('Multi-symbol backtest (e2e)', () => {

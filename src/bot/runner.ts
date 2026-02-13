@@ -46,6 +46,7 @@ export class BotRunner {
       contractIds: config.contractIds,
       symbols: config.symbols,
       quantity: config.quantity,
+      maxContracts: config.maxContracts,
     });
     this.executor = new TradeExecutor(config.dryRun);
     this.writeQueue = new SupabaseWriteQueue(config.writeIntervalMs);
@@ -183,12 +184,48 @@ export class BotRunner {
                 pos.entryOrderId = response.orderId;
                 pos.dirty = true;
               }
+            } else if (!response.success) {
+              // Order rejected by exchange — cancel the position
+              logger.warn('Order rejected by exchange', {
+                symbol: params.symbol,
+                positionId: params.positionId,
+                errorCode: response.errorCode,
+                errorMessage: response.errorMessage,
+              });
+              const pos = this.positionManager.positions.get(params.symbol);
+              if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
+                const oldState = pos.state;
+                pos.state = 'cancelled';
+                pos.exitReason = `order_rejected: ${response.errorMessage ?? 'unknown'}`;
+                pos.closedAt = new Date();
+                pos.updatedAt = new Date();
+                pos.dirty = true;
+                this.positionManager.emit('stateChange', {
+                  positionId: pos.id,
+                  oldState,
+                  newState: 'cancelled' as PositionState,
+                  position: pos,
+                });
+              }
             }
           })
           .catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : 'unknown';
             logger.error('Failed to place order', { error: msg });
           });
+      },
+    );
+
+    // Position manager → Log capacity exceeded events
+    this.positionManager.on(
+      'capacityExceeded',
+      (params: { symbol: string; currentMicroEquivalent: number; maxMicroEquivalent: number; requiredMicroEquivalent: number }) => {
+        logger.warn('Capacity exceeded, skipping alert', {
+          symbol: params.symbol,
+          currentMicroEquivalent: params.currentMicroEquivalent,
+          maxMicroEquivalent: params.maxMicroEquivalent,
+          requiredMicroEquivalent: params.requiredMicroEquivalent,
+        });
       },
     );
 

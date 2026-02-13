@@ -39,11 +39,13 @@ async function main(): Promise<void> {
   const symbols = symbolsArg.split(',').map((s) => s.trim().toUpperCase());
   const accountIdStr = getArg(args, '--account-id');
   const quantity = parseInt(getArg(args, '--quantity') ?? '1', 10);
+  const maxContracts = parseInt(getArg(args, '--max-contracts') ?? '30', 10);
 
   if (!accountIdStr) {
-    console.error('Usage: npm run bot -- --account-id <id> [--symbols MES,MNQ,MYM] [--quantity 1] [--dry-run]');
-    console.error('  --symbols  Comma-separated list of symbols (default: ES)');
-    console.error('  --symbol   Single symbol (backward compat, same as --symbols)');
+    console.error('Usage: npm run bot -- --account-id <id> [--symbols MES,MNQ,MYM] [--quantity 1] [--max-contracts 30] [--dry-run]');
+    console.error('  --symbols         Comma-separated list of symbols (default: ES)');
+    console.error('  --symbol          Single symbol (backward compat, same as --symbols)');
+    console.error('  --max-contracts   Max contracts in micro-equivalent units (default: 30)');
     process.exit(1);
   }
 
@@ -69,6 +71,7 @@ async function main(): Promise<void> {
     writeIntervalMs: 5000,
     symbols,
     quantity,
+    maxContracts,
   };
 
   const runner = new BotRunner(config);

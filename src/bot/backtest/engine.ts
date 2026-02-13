@@ -7,7 +7,7 @@ import { BarUnit } from '../../services/topstepx/types';
 import type { Bar } from '../../services/topstepx/types';
 import type { AlertRow } from '../../types/database';
 import { calculateVpvr } from '../../services/vpvr/calculator';
-import { simulateTrade } from './simulator';
+import { simulateBatch } from './simulator';
 import type { BacktestConfig, BacktestResult, SimulatedTrade } from './types';
 
 /**
@@ -51,9 +51,9 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
     contractIdMap.set(sym, getCurrentContractId(sym));
   }
 
-  const trades: SimulatedTrade[] = [];
+  // Collect alert data (bars + VPVR) for batch simulation
+  const alertsWithData: Array<{ alert: AlertRow; bars: Bar[]; vpvr: ReturnType<typeof calculateVpvr> & object }> = [];
 
-  // Process each alert
   for (const alert of alertRows) {
     try {
       const contractId = contractIdMap.get(alert.symbol) ?? getCurrentContractId(alert.symbol);
@@ -84,23 +84,21 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
         continue;
       }
 
-      // Simulate the trade using the alert's own symbol
-      const trade = simulateTrade(alert, bars, vpvr, {
-        quantity: config.quantity,
-        symbol: alert.symbol,
-      });
-
-      if (trade) {
-        trades.push(trade);
-      }
+      alertsWithData.push({ alert, bars, vpvr });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'unknown';
-      logger.warn('Failed to simulate trade for alert', { alertId: alert.id, error: msg });
+      logger.warn('Failed to prepare alert for simulation', { alertId: alert.id, error: msg });
     }
   }
 
-  // Aggregate results
-  return aggregateResults(config, alertRows.length, trades);
+  // Run capacity-aware batch simulation
+  const batchResult = simulateBatch(alertsWithData, {
+    quantity: config.quantity,
+    maxContracts: config.maxContracts,
+  });
+
+  // Aggregate results with capacity stats
+  return aggregateResults(config, alertRows.length, batchResult.trades, batchResult.alertsSkipped, batchResult.capacityExceeded);
 }
 
 /** Aggregate simulated trades into a BacktestResult */
@@ -108,6 +106,8 @@ export function aggregateResults(
   config: BacktestConfig,
   alertsEvaluated: number,
   trades: SimulatedTrade[],
+  alertsSkipped = 0,
+  capacityExceeded = 0,
 ): BacktestResult {
   const filledTrades = trades.filter((t) => t.entryFilled);
   const wins = filledTrades.filter((t) => t.netPnl > 0);
@@ -142,6 +142,8 @@ export function aggregateResults(
     sharpeRatio,
     maxDrawdown,
     trades,
+    alertsSkipped,
+    capacityExceeded,
   };
 }
 

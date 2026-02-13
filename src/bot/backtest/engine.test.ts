@@ -43,15 +43,16 @@ vi.mock('../../services/vpvr/calculator', () => ({
 
 vi.mock('./simulator', () => ({
   simulateTrade: vi.fn().mockReturnValue(null),
+  simulateBatch: vi.fn().mockReturnValue({ trades: [], alertsSkipped: 0, capacityExceeded: 0 }),
 }));
 
 import { runBacktest, aggregateResults } from './engine';
 import { getHistoricalBars } from '../../services/topstepx/client';
-import { simulateTrade } from './simulator';
+import { simulateBatch } from './simulator';
 import type { SimulatedTrade } from './types';
 
 const mockGetHistoricalBars = vi.mocked(getHistoricalBars);
-const mockSimulateTrade = vi.mocked(simulateTrade);
+const mockSimulateBatch = vi.mocked(simulateBatch);
 
 const defaultConfig: BacktestConfig = {
   fromDate: '2026-01-01T00:00:00Z',
@@ -59,6 +60,7 @@ const defaultConfig: BacktestConfig = {
   symbols: ['ES'],
   quantity: 1,
   verbose: false,
+  maxContracts: 0,
 };
 
 function makeTrade(overrides?: Partial<SimulatedTrade>): SimulatedTrade {
@@ -134,7 +136,7 @@ describe('runBacktest', () => {
     expect(mockGetHistoricalBars).toHaveBeenCalledTimes(1);
   });
 
-  it('calls simulateTrade for each alert with bars', async () => {
+  it('calls simulateBatch for each alert with bars', async () => {
     const alert = {
       id: 'alert-1',
       symbol: 'ES',
@@ -149,7 +151,10 @@ describe('runBacktest', () => {
 
     await runBacktest(defaultConfig);
 
-    expect(mockSimulateTrade).toHaveBeenCalledTimes(1);
+    expect(mockSimulateBatch).toHaveBeenCalledTimes(1);
+    // Verify it was called with 1 alert's data
+    const callArgs = mockSimulateBatch.mock.calls[0];
+    expect(callArgs[0]).toHaveLength(1);
   });
 
   it('skips alerts with no bars', async () => {
@@ -165,7 +170,10 @@ describe('runBacktest', () => {
 
     const result = await runBacktest(defaultConfig);
 
-    expect(mockSimulateTrade).not.toHaveBeenCalled();
+    // simulateBatch is still called but with empty array of alerts
+    expect(mockSimulateBatch).toHaveBeenCalledTimes(1);
+    const callArgs = mockSimulateBatch.mock.calls[0];
+    expect(callArgs[0]).toHaveLength(0);
     expect(result.tradesTaken).toBe(0);
   });
 });

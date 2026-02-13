@@ -46,6 +46,7 @@ const config: BacktestConfig = {
   symbols: ['ES'],
   quantity: 1,
   verbose: true,
+  maxContracts: 0,
 };
 
 describe('Backtest (e2e)', () => {

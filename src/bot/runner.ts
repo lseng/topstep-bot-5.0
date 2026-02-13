@@ -33,6 +33,9 @@ export class BotRunner {
   private writeQueue: SupabaseWriteQueue;
   private running = false;
 
+  /** Reverse lookup: contractId → symbol for quote routing */
+  private contractToSymbol: Map<string, string>;
+
   constructor(config: BotConfig) {
     this.config = config;
     this.userHub = new UserHubConnection();
@@ -40,13 +43,19 @@ export class BotRunner {
     this.alertListener = new AlertListener();
     this.positionManager = new PositionManager({
       accountId: config.accountId,
-      contractId: config.contractId,
-      symbol: config.symbol,
+      contractIds: config.contractIds,
+      symbols: config.symbols,
       quantity: config.quantity,
       slBufferTicks: config.slBufferTicks,
     });
     this.executor = new TradeExecutor(config.dryRun);
     this.writeQueue = new SupabaseWriteQueue(config.writeIntervalMs);
+
+    // Build reverse lookup for quote routing
+    this.contractToSymbol = new Map<string, string>();
+    for (const [symbol, contractId] of config.contractIds.entries()) {
+      this.contractToSymbol.set(contractId, symbol);
+    }
 
     this.wireEvents();
   }
@@ -57,7 +66,7 @@ export class BotRunner {
     this.running = true;
 
     logger.info('Bot starting', {
-      symbol: this.config.symbol,
+      symbols: this.config.symbols,
       accountId: this.config.accountId,
       dryRun: this.config.dryRun,
     });
@@ -71,7 +80,12 @@ export class BotRunner {
     // Connect SignalR hubs
     await this.userHub.connect(token);
     await this.marketHub.connect(token);
-    await this.marketHub.subscribe(this.config.contractId);
+
+    // Subscribe to all symbol contracts
+    for (const [symbol, contractId] of this.config.contractIds.entries()) {
+      await this.marketHub.subscribe(contractId);
+      logger.info('Subscribed to contract', { symbol, contractId });
+    }
 
     // Start alert listener
     const supabase = getSupabase();
@@ -80,7 +94,10 @@ export class BotRunner {
     // Start write queue
     this.writeQueue.start();
 
-    logger.info('Bot running', { contractId: this.config.contractId });
+    logger.info('Bot running', {
+      symbols: this.config.symbols,
+      contracts: Array.from(this.config.contractIds.values()),
+    });
   }
 
   /** Stop the bot gracefully */
@@ -113,6 +130,8 @@ export class BotRunner {
     marketHubConnected: boolean;
     activePositions: number;
     pendingWrites: number;
+    symbols: string[];
+    contractIds: string[];
   } {
     return {
       running: this.running,
@@ -120,14 +139,17 @@ export class BotRunner {
       marketHubConnected: this.marketHub.isConnected,
       activePositions: this.positionManager.getActivePositions().length,
       pendingWrites: this.writeQueue.pendingCount,
+      symbols: this.config.symbols,
+      contractIds: Array.from(this.config.contractIds.values()),
     };
   }
 
   // ─── Event Wiring ──────────────────────────────────────────────────────────
 
   private wireEvents(): void {
-    // Alert listener → Position manager
+    // Alert listener → Position manager (only configured symbols)
     this.alertListener.on('newAlert', (alert: AlertRow) => {
+      if (!this.config.symbols.includes(alert.symbol)) return;
       this.handleNewAlert(alert).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'unknown';
         logger.error('Failed to handle alert', { alertId: alert.id, error: msg });
@@ -143,7 +165,10 @@ export class BotRunner {
 
     // Market Hub → Position manager (price ticks)
     this.marketHub.onQuote = (event: GatewayQuoteEvent): void => {
-      this.positionManager.onTick(this.config.symbol, event.last, new Date(event.timestamp));
+      const symbol = this.contractToSymbol.get(event.contractId);
+      if (symbol) {
+        this.positionManager.onTick(symbol, event.last, new Date(event.timestamp));
+      }
     };
 
     // Position manager → Trade executor (place orders)

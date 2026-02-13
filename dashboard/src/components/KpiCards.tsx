@@ -9,6 +9,7 @@ interface KpiCardsProps {
   lastAlertTime: string | null;
   openPositions?: number;
   totalPnl?: number;
+  perSymbolPnl?: Record<string, number>;
 }
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -37,6 +38,7 @@ export function KpiCards({
   lastAlertTime,
   openPositions,
   totalPnl,
+  perSymbolPnl,
 }: KpiCardsProps) {
   useTick();
   const cards = [
@@ -72,21 +74,37 @@ export function KpiCards({
     },
   ];
 
+  const symbolEntries = perSymbolPnl ? Object.entries(perSymbolPnl).sort(([a], [b]) => a.localeCompare(b)) : [];
+
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-      {cards.map((card) => (
-        <Card key={card.title}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {card.title}
-            </CardTitle>
-            <card.icon className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{card.value}</div>
-          </CardContent>
-        </Card>
-      ))}
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {cards.map((card) => (
+          <Card key={card.title}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {card.title}
+              </CardTitle>
+              <card.icon className="size-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{card.value}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      {symbolEntries.length > 1 && (
+        <div className="flex gap-4 flex-wrap">
+          {symbolEntries.map(([sym, pnl]) => (
+            <div key={sym} className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{sym}</span>{' '}
+              <span className={pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+                {formatPnl(pnl)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

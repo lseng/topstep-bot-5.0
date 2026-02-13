@@ -1,4 +1,5 @@
-// E2E test: Run backtest against seeded alerts with mocked historical bars
+// E2E test: Multi-symbol backtest — run backtest with symbols: ['MES', 'MNQ']
+// Verify per-symbol results and aggregate stats
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BacktestConfig } from '../../src/bot/backtest/types';
@@ -33,32 +34,43 @@ vi.mock('../../src/services/topstepx/client', () => ({
     { t: '2026-01-15T09:50:00Z', o: 5080, h: 5105, l: 5078, c: 5100, v: 1100 },
     { t: '2026-01-15T09:55:00Z', o: 5100, h: 5102, l: 5070, c: 5075, v: 700 },
   ]),
-  getCurrentContractId: vi.fn().mockReturnValue('CON.F.US.EPH26'),
+  getCurrentContractId: vi.fn().mockImplementation((symbol: string) => {
+    if (symbol === 'MNQ') return 'CON.F.US.MNQ.H26';
+    return 'CON.F.US.MES.H26';
+  }),
 }));
 
 import { runBacktest, aggregateResults } from '../../src/bot/backtest/engine';
 import { formatBacktestReport } from '../../src/bot/backtest/reporter';
 import type { SimulatedTrade } from '../../src/bot/backtest/types';
 
-const config: BacktestConfig = {
+const multiConfig: BacktestConfig = {
   fromDate: '2026-01-01T00:00:00Z',
   toDate: '2026-01-31T23:59:59Z',
-  symbols: ['ES'],
+  symbols: ['MES', 'MNQ'],
   slBufferTicks: 8,
   quantity: 1,
   verbose: true,
 };
 
-describe('Backtest (e2e)', () => {
+describe('Multi-symbol backtest (e2e)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('runs backtest with seeded alerts and returns result', async () => {
+  it('fetches alerts using .in() for multiple symbols', async () => {
+    mockSupabase.order.mockResolvedValueOnce({ data: [], error: null });
+
+    await runBacktest(multiConfig);
+
+    expect(mockSupabase.in).toHaveBeenCalledWith('symbol', ['MES', 'MNQ']);
+  });
+
+  it('runs backtest with alerts from multiple symbols', async () => {
     const seededAlerts = [
       {
-        id: 'alert-bt-1',
-        symbol: 'ES',
+        id: 'alert-mes-1',
+        symbol: 'MES',
         action: 'buy',
         quantity: 1,
         price: 5020,
@@ -74,33 +86,39 @@ describe('Backtest (e2e)', () => {
         raw_payload: {},
         updated_at: '2026-01-15T09:30:00Z',
       },
+      {
+        id: 'alert-mnq-1',
+        symbol: 'MNQ',
+        action: 'sell',
+        quantity: 1,
+        price: 5080,
+        created_at: '2026-01-15T10:00:00Z',
+        status: 'received',
+        order_type: null,
+        stop_loss: null,
+        take_profit: null,
+        comment: null,
+        error_message: null,
+        order_id: null,
+        executed_at: null,
+        raw_payload: {},
+        updated_at: '2026-01-15T10:00:00Z',
+      },
     ];
 
     mockSupabase.order.mockResolvedValueOnce({ data: seededAlerts, error: null });
 
-    const result = await runBacktest(config);
+    const result = await runBacktest(multiConfig);
 
-    expect(result.alertsEvaluated).toBe(1);
-    expect(result.config.symbols).toEqual(['ES']);
-    // The trade should have been simulated (entry at VAL=5020, bars go down to 5015)
-    expect(result.trades.length).toBeGreaterThanOrEqual(0);
+    expect(result.alertsEvaluated).toBe(2);
+    expect(result.config.symbols).toEqual(['MES', 'MNQ']);
   });
 
-  it('handles empty alerts gracefully', async () => {
-    mockSupabase.order.mockResolvedValueOnce({ data: [], error: null });
-
-    const result = await runBacktest(config);
-
-    expect(result.alertsEvaluated).toBe(0);
-    expect(result.tradesTaken).toBe(0);
-    expect(result.trades).toHaveLength(0);
-  });
-
-  it('aggregateResults computes correct statistics for filled trades', () => {
+  it('aggregateResults works with mixed-symbol trades', () => {
     const trades: SimulatedTrade[] = [
       {
         alertId: 'a1',
-        symbol: 'ES',
+        symbol: 'MES',
         side: 'long',
         entryPrice: 5020,
         entryTime: new Date('2026-01-15T09:30:00Z'),
@@ -109,8 +127,8 @@ describe('Backtest (e2e)', () => {
         exitReason: 'sl_hit_from_tp1_hit',
         highestTpHit: 'tp1',
         tpProgression: ['tp1'],
-        grossPnl: 1500,
-        netPnl: 1500,
+        grossPnl: 150, // MES: 30 points * $5 = $150
+        netPnl: 150,
         vpvrPoc: 5050,
         vpvrVah: 5080,
         vpvrVal: 5020,
@@ -118,51 +136,17 @@ describe('Backtest (e2e)', () => {
       },
       {
         alertId: 'a2',
-        symbol: 'ES',
+        symbol: 'MNQ',
         side: 'short',
         entryPrice: 5080,
-        entryTime: new Date('2026-01-16T09:30:00Z'),
-        exitPrice: 5082,
-        exitTime: new Date('2026-01-16T09:45:00Z'),
-        exitReason: 'sl_hit_from_active',
-        highestTpHit: null,
-        tpProgression: [],
-        grossPnl: -100,
-        netPnl: -100,
-        vpvrPoc: 5050,
-        vpvrVah: 5080,
-        vpvrVal: 5020,
-        entryFilled: true,
-      },
-    ];
-
-    const result = aggregateResults(config, 2, trades);
-
-    expect(result.tradesTaken).toBe(2);
-    expect(result.wins).toBe(1);
-    expect(result.losses).toBe(1);
-    expect(result.winRate).toBe(50);
-    expect(result.totalGrossPnl).toBe(1400);
-    expect(result.totalNetPnl).toBe(1400);
-    expect(result.profitFactor).toBe(15); // 1500 / 100
-    expect(result.maxDrawdown).toBe(100);
-  });
-
-  it('reporter formats a valid report string', () => {
-    const trades: SimulatedTrade[] = [
-      {
-        alertId: 'a1',
-        symbol: 'ES',
-        side: 'long',
-        entryPrice: 5020,
-        entryTime: new Date('2026-01-15T09:30:00Z'),
+        entryTime: new Date('2026-01-15T10:00:00Z'),
         exitPrice: 5050,
-        exitTime: new Date('2026-01-15T10:00:00Z'),
+        exitTime: new Date('2026-01-15T10:30:00Z'),
         exitReason: 'sl_hit_from_tp1_hit',
         highestTpHit: 'tp1',
         tpProgression: ['tp1'],
-        grossPnl: 1500,
-        netPnl: 1500,
+        grossPnl: 60, // MNQ: 30 points * $2 = $60
+        netPnl: 60,
         vpvrPoc: 5050,
         vpvrVah: 5080,
         vpvrVal: 5020,
@@ -170,14 +154,38 @@ describe('Backtest (e2e)', () => {
       },
     ];
 
-    const result = aggregateResults(config, 1, trades);
+    const result = aggregateResults(multiConfig, 2, trades);
+
+    expect(result.tradesTaken).toBe(2);
+    expect(result.wins).toBe(2);
+    expect(result.totalNetPnl).toBe(210);
+    expect(result.winRate).toBe(100);
+  });
+
+  it('reporter shows per-symbol breakdown for multi-symbol results', () => {
+    const trades: SimulatedTrade[] = [
+      {
+        alertId: 'a1', symbol: 'MES', side: 'long',
+        entryPrice: 5020, entryTime: new Date(), exitPrice: 5050, exitTime: new Date(),
+        exitReason: 'tp1', highestTpHit: 'tp1', tpProgression: ['tp1'],
+        grossPnl: 150, netPnl: 150,
+        vpvrPoc: 5050, vpvrVah: 5080, vpvrVal: 5020, entryFilled: true,
+      },
+      {
+        alertId: 'a2', symbol: 'MNQ', side: 'short',
+        entryPrice: 5080, entryTime: new Date(), exitPrice: 5050, exitTime: new Date(),
+        exitReason: 'tp1', highestTpHit: 'tp1', tpProgression: ['tp1'],
+        grossPnl: 60, netPnl: 60,
+        vpvrPoc: 5050, vpvrVah: 5080, vpvrVal: 5020, entryFilled: true,
+      },
+    ];
+
+    const result = aggregateResults(multiConfig, 2, trades);
     const report = formatBacktestReport(result);
 
-    expect(report).toContain('BACKTEST RESULTS');
-    expect(report).toContain('Win rate');
-    expect(report).toContain('Profit factor');
-    expect(report).toContain('ES');
-    // Verbose config shows trade breakdown
-    expect(report).toContain('Trade Breakdown');
+    expect(report).toContain('MES, MNQ');
+    expect(report).toContain('Per-Symbol Breakdown');
+    expect(report).toContain('MES');
+    expect(report).toContain('MNQ');
   });
 });

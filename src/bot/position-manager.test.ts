@@ -44,8 +44,8 @@ function makeAlert(overrides?: Partial<AlertRow>): AlertRow {
 
 const defaultConfig: PositionManagerConfig = {
   accountId: 1001,
-  contractId: 'CON.F.US.EPH26',
-  symbol: 'ES',
+  contractIds: new Map([['ES', 'CON.F.US.EPH26']]),
+  symbols: ['ES'],
   quantity: 1,
   slBufferTicks: 8,
 };

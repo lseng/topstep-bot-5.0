@@ -264,6 +264,7 @@ export interface ContractSpec {
   contractIdPrefix: string;
   marginDay: number;
   marginOvernight: number;
+  expiryCycle: 'quarterly' | 'monthly';
 }
 
 export const CONTRACT_SPECS: Record<string, ContractSpec> = {
@@ -275,6 +276,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     contractIdPrefix: 'CON.F.US.EP',
     marginDay: 500,
     marginOvernight: 12000,
+    expiryCycle: 'quarterly',
   },
   NQ: {
     name: 'E-mini Nasdaq 100',
@@ -284,6 +286,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     contractIdPrefix: 'CON.F.US.ENQ',
     marginDay: 500,
     marginOvernight: 16000,
+    expiryCycle: 'quarterly',
   },
   MES: {
     name: 'Micro E-mini S&P 500',
@@ -293,6 +296,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     contractIdPrefix: 'CON.F.US.MES',
     marginDay: 50,
     marginOvernight: 1200,
+    expiryCycle: 'quarterly',
   },
   MNQ: {
     name: 'Micro E-mini Nasdaq 100',
@@ -302,6 +306,47 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     contractIdPrefix: 'CON.F.US.MNQ',
     marginDay: 50,
     marginOvernight: 1600,
+    expiryCycle: 'quarterly',
+  },
+  MYM: {
+    name: 'Micro E-mini Dow',
+    tickSize: 1.0,
+    tickValue: 0.5,
+    pointValue: 0.5,
+    contractIdPrefix: 'CON.F.US.MYM',
+    marginDay: 50,
+    marginOvernight: 1200,
+    expiryCycle: 'quarterly',
+  },
+  MGC: {
+    name: 'Micro Gold',
+    tickSize: 0.1,
+    tickValue: 1.0,
+    pointValue: 10.0,
+    contractIdPrefix: 'CON.F.US.MGC',
+    marginDay: 50,
+    marginOvernight: 1200,
+    expiryCycle: 'monthly',
+  },
+  MCL: {
+    name: 'Micro Crude Oil',
+    tickSize: 0.01,
+    tickValue: 1.0,
+    pointValue: 100.0,
+    contractIdPrefix: 'CON.F.US.MCL',
+    marginDay: 50,
+    marginOvernight: 1200,
+    expiryCycle: 'monthly',
+  },
+  MBT: {
+    name: 'Micro Bitcoin',
+    tickSize: 5.0,
+    tickValue: 0.5,
+    pointValue: 0.1,
+    contractIdPrefix: 'CON.F.CME.MBT',
+    marginDay: 50,
+    marginOvernight: 1600,
+    expiryCycle: 'monthly',
   },
 };
 

@@ -82,11 +82,11 @@ import { BotRunner } from '../../src/bot/runner';
 
 const defaultConfig: BotConfig = {
   accountId: 1001,
-  contractId: 'CON.F.US.EPH26',
+  contractIds: new Map([['ES', 'CON.F.US.EPH26']]),
   dryRun: true,
   slBufferTicks: 8,
   writeIntervalMs: 5000,
-  symbol: 'ES',
+  symbols: ['ES'],
   quantity: 1,
 };
 

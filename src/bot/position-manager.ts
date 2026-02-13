@@ -46,8 +46,8 @@ export interface PositionManagerEvents {
 /** Configuration for the position manager */
 export interface PositionManagerConfig {
   accountId: number;
-  contractId: string;
-  symbol: string;
+  contractIds: Map<string, string>;
+  symbols: string[];
   quantity: number;
   slBufferTicks: number;
 }
@@ -107,7 +107,7 @@ export class PositionManager extends EventEmitter {
     // Calculate entry from VPVR
     const entry = calculateEntryPrice(action, vpvr, {
       slBufferTicks: this.config.slBufferTicks,
-      symbol: this.config.symbol,
+      symbol: alert.symbol,
     });
 
     if (!entry) return;
@@ -280,7 +280,7 @@ export class PositionManager extends EventEmitter {
       state: 'pending_entry',
       targetEntryPrice: entry.entryPrice,
       quantity: this.config.quantity,
-      contractId: this.config.contractId,
+      contractId: this.config.contractIds.get(alert.symbol) ?? '',
       accountId: this.config.accountId,
       currentSl: entry.initialSl,
       initialSl: entry.initialSl,
@@ -340,7 +340,7 @@ export class PositionManager extends EventEmitter {
     if (position.entryPrice == null) return;
 
     const pointValue =
-      CONTRACT_SPECS[this.config.symbol]?.pointValue ?? 50;
+      CONTRACT_SPECS[position.symbol]?.pointValue ?? 50;
     const priceDiff =
       position.side === 'long'
         ? currentPrice - position.entryPrice
@@ -351,7 +351,7 @@ export class PositionManager extends EventEmitter {
 
   private buildTradeResult(position: ManagedPosition): TradeResult {
     const pointValue =
-      CONTRACT_SPECS[this.config.symbol]?.pointValue ?? 50;
+      CONTRACT_SPECS[position.symbol]?.pointValue ?? 50;
     const entryPrice = position.entryPrice!;
     const exitPrice = position.exitPrice!;
     const priceDiff =

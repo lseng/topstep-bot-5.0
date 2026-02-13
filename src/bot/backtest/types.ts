@@ -8,8 +8,8 @@ export interface BacktestConfig {
   fromDate: string;
   /** End date for fetching alerts (ISO 8601) */
   toDate: string;
-  /** Trading symbol to filter alerts (e.g. 'ES') */
-  symbol: string;
+  /** Trading symbols to filter alerts (e.g. ['MES', 'MNQ']) */
+  symbols: string[];
   /** Number of ticks below/above entry for initial SL (default: 8) */
   slBufferTicks: number;
   /** Number of contracts per trade (default: 1) */

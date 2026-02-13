@@ -17,7 +17,7 @@ export function formatBacktestReport(result: BacktestResult): string {
   lines.push('');
 
   // Config summary
-  lines.push(`  Symbol:       ${result.config.symbol}`);
+  lines.push(`  Symbols:      ${result.config.symbols.join(', ')}`);
   lines.push(`  Period:       ${result.config.fromDate} to ${result.config.toDate}`);
   lines.push(`  SL Buffer:    ${result.config.slBufferTicks} ticks`);
   lines.push(`  Quantity:     ${result.config.quantity} contracts`);
@@ -37,6 +37,20 @@ export function formatBacktestReport(result: BacktestResult): string {
   lines.push(`  Sharpe ratio:      ${result.sharpeRatio.toFixed(2)}`);
   lines.push(`  Max drawdown:      ${formatPnl(-result.maxDrawdown)}`);
   lines.push('');
+
+  // Per-symbol breakdown (only if multiple symbols)
+  const symbolSet = new Set(result.trades.filter((t) => t.entryFilled).map((t) => t.symbol));
+  if (symbolSet.size > 1) {
+    lines.push('--- Per-Symbol Breakdown ---');
+    for (const sym of symbolSet) {
+      const symTrades = result.trades.filter((t) => t.entryFilled && t.symbol === sym);
+      const symWins = symTrades.filter((t) => t.netPnl > 0).length;
+      const symPnl = symTrades.reduce((sum, t) => sum + t.netPnl, 0);
+      const symWinRate = symTrades.length > 0 ? ((symWins / symTrades.length) * 100).toFixed(1) : '0.0';
+      lines.push(`  ${padRight(sym, 6)} ${padRight(String(symTrades.length) + ' trades', 12)} WR: ${symWinRate}%  P&L: ${formatPnl(symPnl)}`);
+    }
+    lines.push('');
+  }
 
   // Per-trade breakdown
   if (result.trades.length > 0 && result.config.verbose) {

@@ -76,6 +76,16 @@ const columns: ColumnDef<TradeLogRow>[] = [
     ),
   },
   {
+    accessorKey: 'account_id',
+    header: 'Account',
+    cell: ({ getValue }) => {
+      const acctId = getValue<number | null>();
+      return (
+        <span className="font-mono text-xs text-muted-foreground">{acctId ?? '---'}</span>
+      );
+    },
+  },
+  {
     accessorKey: 'side',
     header: 'Side',
     cell: ({ getValue }) => {

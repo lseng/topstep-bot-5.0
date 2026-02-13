@@ -41,6 +41,7 @@ interface UseAlertsParams {
   order?: 'asc' | 'desc';
   from?: string;
   to?: string;
+  name?: string;
 }
 
 export function useAlerts(params: UseAlertsParams = {}) {

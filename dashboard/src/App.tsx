@@ -38,6 +38,7 @@ export function App() {
     status: '',
     from: '',
     to: '',
+    name: '',
   });
 
   // Positions state
@@ -71,6 +72,7 @@ export function App() {
     status: filters.status || undefined,
     from: filters.from || undefined,
     to: filters.to || undefined,
+    name: filters.name || undefined,
     sort: alertsSortColumn,
     order: alertsSortOrder,
   });

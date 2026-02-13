@@ -94,12 +94,13 @@ export class SupabaseWriteQueue {
   }
 
   /** Write a completed trade to trades_log immediately */
-  async writeTradeLog(trade: TradeResult): Promise<void> {
+  async writeTradeLog(trade: TradeResult, accountId?: number): Promise<void> {
     const supabase = getSupabase();
 
     const insert: TradesLogInsert = {
       position_id: trade.positionId,
       alert_id: trade.alertId,
+      account_id: accountId ?? null,
       symbol: trade.symbol,
       side: trade.side,
       entry_price: trade.entryPrice,

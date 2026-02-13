@@ -27,6 +27,8 @@ export interface TradingViewAlert {
   quantity?: number; // Optional, defaults to 1
   interval?: string; // Timeframe: 1, 5, 15, 60, D, W, M
   time?: string; // ISO timestamp from {{time}} placeholder
+  /** Alert name from TradingView (e.g. 'day-trader-medium-term-13'). Used for multi-account routing. */
+  name?: string;
   // OHLCV data from TradingView bar
   open?: number;
   high?: number;
@@ -66,6 +68,8 @@ export interface ParsedWebhookPayload {
   interval?: string;
   alertTime?: Date; // Parsed from time field
   ohlcv?: OHLCVData;
+  /** Alert name from TradingView (e.g. 'day-trader-medium-term-13'). Used for multi-account routing. */
+  name?: string;
   orderType?: OrderType;
   price?: number | null;
   stopLoss?: number;

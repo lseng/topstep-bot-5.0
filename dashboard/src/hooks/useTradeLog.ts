@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 interface TradeLogRow {
   id: string;
   position_id: string;
+  account_id: number | null;
   symbol: string;
   side: 'long' | 'short';
   entry_price: number;
@@ -43,6 +44,7 @@ interface UseTradeLogParams {
   to?: string;
   sort?: string;
   order?: 'asc' | 'desc';
+  account_id?: number;
 }
 
 export type { TradeLogRow };

@@ -1,4 +1,5 @@
 // Bot runner — main orchestrator wiring SignalR hubs, alert listener, position manager, executor, writer
+// Supports multi-account routing: alerts matched by name to account-strategy pairs
 
 import { logger } from '../lib/logger';
 import { getSupabase } from '../lib/supabase';
@@ -16,28 +17,49 @@ import { SupabaseWriteQueue } from './supabase-writer';
 import { AlertListener } from './alert-listener';
 import { analyzeTrade } from './llm-analyzer';
 
+/** Per-account resources managed by the runner */
+interface AccountResources {
+  accountId: number;
+  alertName: string;
+  positionManager: PositionManager;
+  executor: TradeExecutor;
+  /** Track pending retry order IDs: symbol -> { steppedOrderId, fallbackOrderId } */
+  retryOrders: Map<string, { steppedOrderId: number; fallbackOrderId: number }>;
+}
+
 /**
  * BotRunner — main orchestrator for the autonomous trading pipeline.
  *
+ * Supports two modes:
+ * 1. Single-account mode (backward compat): one PositionManager + TradeExecutor
+ * 2. Multi-account mode: Map<accountId, AccountResources> with alert name routing
+ *
  * Lifecycle:
- *   start() → authenticate → connect hubs → subscribe alerts → run
- *   stop()  → flush writes → disconnect hubs → unsubscribe alerts
+ *   start() -> authenticate -> connect hubs -> subscribe alerts -> run
+ *   stop()  -> flush writes -> disconnect hubs -> unsubscribe alerts
  */
 export class BotRunner {
   private config: BotConfig;
   private userHub: UserHubConnection;
   private marketHub: MarketHubConnection;
   private alertListener: AlertListener;
-  private positionManager: PositionManager;
-  private executor: TradeExecutor;
   private writeQueue: SupabaseWriteQueue;
   private running = false;
 
-  /** Reverse lookup: contractId → symbol for quote routing */
-  private contractToSymbol: Map<string, string>;
+  /** Multi-account: per-account resources keyed by accountId */
+  private accountResources = new Map<number, AccountResources>();
 
-  /** Track pending retry order IDs: symbol → { steppedOrderId, fallbackOrderId } */
-  private retryOrders = new Map<string, { steppedOrderId: number; fallbackOrderId: number }>();
+  /** Reverse lookup: alertName -> accountId for routing */
+  private alertNameToAccountId = new Map<string, number>();
+
+  /** Whether multi-account mode is active */
+  private multiAccountMode: boolean;
+
+  /** Primary PositionManager for backward compat (single account mode) */
+  private primaryPositionManager: PositionManager;
+
+  /** Reverse lookup: contractId -> symbol for quote routing */
+  private contractToSymbol: Map<string, string>;
 
   /** Position reconciliation timer */
   private syncInterval: ReturnType<typeof setInterval> | null = null;
@@ -47,22 +69,64 @@ export class BotRunner {
     this.userHub = new UserHubConnection();
     this.marketHub = new MarketHubConnection();
     this.alertListener = new AlertListener();
-    this.positionManager = new PositionManager({
-      accountId: config.accountId,
-      contractIds: config.contractIds,
-      symbols: config.symbols,
-      quantity: config.quantity,
-      maxContracts: config.maxContracts,
-      maxRetries: config.maxRetries,
-      slBufferTicks: config.slBufferTicks,
-    });
-    this.executor = new TradeExecutor(config.dryRun);
     this.writeQueue = new SupabaseWriteQueue(config.writeIntervalMs);
+    this.multiAccountMode = !!(config.accounts && config.accounts.length > 0);
 
     // Build reverse lookup for quote routing
     this.contractToSymbol = new Map<string, string>();
     for (const [symbol, contractId] of config.contractIds.entries()) {
       this.contractToSymbol.set(contractId, symbol);
+    }
+
+    if (this.multiAccountMode) {
+      // Multi-account mode: create per-account resources
+      for (const acct of config.accounts!) {
+        const pm = new PositionManager({
+          accountId: acct.accountId,
+          contractIds: config.contractIds,
+          symbols: config.symbols,
+          quantity: config.quantity,
+          maxContracts: acct.maxContracts,
+          maxRetries: acct.maxRetries,
+          slBufferTicks: acct.slBufferTicks,
+        });
+
+        const resources: AccountResources = {
+          accountId: acct.accountId,
+          alertName: acct.alertName,
+          positionManager: pm,
+          executor: new TradeExecutor(config.dryRun),
+          retryOrders: new Map(),
+        };
+
+        this.accountResources.set(acct.accountId, resources);
+        this.alertNameToAccountId.set(acct.alertName, acct.accountId);
+      }
+
+      // Primary PM is the first account's PM (for backward compat getStatus/positions accessor)
+      const firstAcct = config.accounts![0];
+      this.primaryPositionManager = this.accountResources.get(firstAcct.accountId)!.positionManager;
+    } else {
+      // Single-account mode (backward compat)
+      this.primaryPositionManager = new PositionManager({
+        accountId: config.accountId,
+        contractIds: config.contractIds,
+        symbols: config.symbols,
+        quantity: config.quantity,
+        maxContracts: config.maxContracts,
+        maxRetries: config.maxRetries,
+        slBufferTicks: config.slBufferTicks,
+      });
+
+      const resources: AccountResources = {
+        accountId: config.accountId,
+        alertName: '', // empty = matches all alerts in single-account mode
+        positionManager: this.primaryPositionManager,
+        executor: new TradeExecutor(config.dryRun),
+        retryOrders: new Map(),
+      };
+
+      this.accountResources.set(config.accountId, resources);
     }
 
     this.wireEvents();
@@ -73,9 +137,11 @@ export class BotRunner {
     if (this.running) return;
     this.running = true;
 
+    const accountIds = Array.from(this.accountResources.keys());
     logger.info('Bot starting', {
       symbols: this.config.symbols,
-      accountId: this.config.accountId,
+      accountIds,
+      multiAccount: this.multiAccountMode,
       dryRun: this.config.dryRun,
     });
 
@@ -85,7 +151,7 @@ export class BotRunner {
 
     const token = await getToken();
 
-    // Connect SignalR hubs
+    // Connect shared SignalR hubs
     await this.userHub.connect(token);
     await this.marketHub.connect(token);
 
@@ -105,7 +171,7 @@ export class BotRunner {
     // Start position reconciliation polling
     if (this.config.syncIntervalMs > 0) {
       this.syncInterval = setInterval(() => {
-        this.reconcilePositions().catch((err: unknown) => {
+        this.reconcileAllPositions().catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : 'unknown';
           logger.error('Position reconciliation failed', { error: msg });
         });
@@ -116,6 +182,7 @@ export class BotRunner {
     logger.info('Bot running', {
       symbols: this.config.symbols,
       contracts: Array.from(this.config.contractIds.values()),
+      accountIds,
     });
   }
 
@@ -144,8 +211,19 @@ export class BotRunner {
     return this.running;
   }
 
+  /** Primary position manager (backward compat) */
   get positions(): PositionManager {
-    return this.positionManager;
+    return this.primaryPositionManager;
+  }
+
+  /** Get position manager for a specific account */
+  getPositionManager(accountId: number): PositionManager | undefined {
+    return this.accountResources.get(accountId)?.positionManager;
+  }
+
+  /** Get all account IDs managed by this runner */
+  getAccountIds(): number[] {
+    return Array.from(this.accountResources.keys());
   }
 
   getStatus(): {
@@ -156,39 +234,52 @@ export class BotRunner {
     pendingWrites: number;
     symbols: string[];
     contractIds: string[];
+    accountIds: number[];
+    multiAccountMode: boolean;
   } {
+    // Sum active positions across all accounts
+    let totalActive = 0;
+    for (const res of this.accountResources.values()) {
+      totalActive += res.positionManager.getActivePositions().length;
+    }
+
     return {
       running: this.running,
       userHubConnected: this.userHub.isConnected,
       marketHubConnected: this.marketHub.isConnected,
-      activePositions: this.positionManager.getActivePositions().length,
+      activePositions: totalActive,
       pendingWrites: this.writeQueue.pendingCount,
       symbols: this.config.symbols,
       contractIds: Array.from(this.config.contractIds.values()),
+      accountIds: Array.from(this.accountResources.keys()),
+      multiAccountMode: this.multiAccountMode,
     };
   }
 
-  // ─── Event Wiring ──────────────────────────────────────────────────────────
+  // --- Event Wiring ---
 
   private wireEvents(): void {
-    // Alert listener → Position manager (dynamic symbol handling)
+    // Wire events for each account's resources
+    for (const resources of this.accountResources.values()) {
+      this.wireAccountEvents(resources);
+    }
+
+    // Alert listener -> Route to correct account
     this.alertListener.on('newAlert', (alert: AlertRow) => {
       // If symbols list is non-empty, filter to only those symbols
       if (this.config.symbols.length > 0 && !this.config.symbols.includes(alert.symbol)) return;
 
-      // Dynamic symbol resolution: if symbol not yet in contractIds, try to resolve it
+      // Dynamic symbol resolution
       if (!this.config.contractIds.has(alert.symbol)) {
         if (!CONTRACT_SPECS[alert.symbol.toUpperCase()]) {
           logger.warn('Unknown symbol, skipping alert', { symbol: alert.symbol, alertId: alert.id });
           return;
         }
 
-        // Resolve contract ID dynamically
         try {
           const contractId = getCurrentContractId(alert.symbol);
           this.config.contractIds.set(alert.symbol, contractId);
           this.contractToSymbol.set(contractId, alert.symbol);
-          // Subscribe to market data for the new symbol
           this.marketHub.subscribe(contractId).catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : 'unknown';
             logger.error('Failed to subscribe to dynamic symbol', { symbol: alert.symbol, error: msg });
@@ -201,71 +292,109 @@ export class BotRunner {
         }
       }
 
-      this.handleNewAlert(alert).catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'unknown';
-        logger.error('Failed to handle alert', { alertId: alert.id, error: msg });
-      });
+      // Route alert to correct account(s)
+      const targets = this.resolveAlertTargets(alert);
+      if (targets.length === 0) {
+        const alertName = alert.name ?? (alert.raw_payload?.name as string | undefined) ?? null;
+        logger.warn('No matching account for alert, skipping', {
+          alertId: alert.id,
+          alertName,
+          symbol: alert.symbol,
+        });
+        return;
+      }
+
+      for (const resources of targets) {
+        this.handleNewAlert(alert, resources).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Failed to handle alert', { alertId: alert.id, accountId: resources.accountId, error: msg });
+        });
+      }
     });
 
-    // User Hub → Position manager (order fills)
+    // User Hub -> Route order fills to correct account PM
     this.userHub.onOrderUpdate = (event: GatewayOrderEvent): void => {
       if (event.status === (OrderStatusNum.FILLED as number) && event.fillPrice != null) {
-        // Check if this is a retry fill — cancel the other order
-        this.handleRetryFill(event.orderId);
-        this.positionManager.onOrderFill(event.orderId, event.fillPrice);
-      }
-    };
-
-    // User Hub → Position manager (position updates — detects exchange-side closes like EOD)
-    this.userHub.onPositionUpdate = (event: GatewayPositionEvent): void => {
-      const symbol = this.contractToSymbol.get(event.contractId);
-      if (!symbol) return;
-
-      // If exchange reports size=0 but bot thinks position is active, close it
-      if (event.size === 0) {
-        const pos = this.positionManager.positions.get(symbol);
-        if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
-          const exitPrice = event.averagePrice || pos.lastPrice || 0;
-          logger.info('Exchange position closed (detected via UserHub)', {
-            symbol,
-            contractId: event.contractId,
-            exitPrice,
-          });
-          this.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+        // Find which account's PM has this order
+        for (const resources of this.accountResources.values()) {
+          this.handleRetryFill(event.orderId, resources);
+          resources.positionManager.onOrderFill(event.orderId, event.fillPrice);
         }
       }
     };
 
-    // Market Hub → Position manager (price ticks)
-    this.marketHub.onQuote = (event: GatewayQuoteEvent): void => {
+    // User Hub -> Route position updates by accountId
+    this.userHub.onPositionUpdate = (event: GatewayPositionEvent): void => {
       const symbol = this.contractToSymbol.get(event.contractId);
-      if (symbol) {
-        this.positionManager.onTick(symbol, event.last, new Date(event.timestamp));
+      if (!symbol) return;
+
+      // Route to correct account by accountId from the event
+      const resources = this.accountResources.get(event.accountId);
+      if (resources) {
+        if (event.size === 0) {
+          const pos = resources.positionManager.positions.get(symbol);
+          if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
+            const exitPrice = event.averagePrice || pos.lastPrice || 0;
+            logger.info('Exchange position closed (detected via UserHub)', {
+              symbol,
+              contractId: event.contractId,
+              accountId: event.accountId,
+              exitPrice,
+            });
+            resources.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+          }
+        }
+      } else {
+        // If no account match found by event.accountId, fall back to all PMs
+        for (const res of this.accountResources.values()) {
+          if (event.size === 0) {
+            const pos = res.positionManager.positions.get(symbol);
+            if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
+              const exitPrice = event.averagePrice || pos.lastPrice || 0;
+              res.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+            }
+          }
+        }
       }
     };
 
-    // Position manager → Trade executor (place orders)
-    this.positionManager.on(
+    // Market Hub -> Broadcast quotes to all PMs (market data is shared)
+    this.marketHub.onQuote = (event: GatewayQuoteEvent): void => {
+      const symbol = this.contractToSymbol.get(event.contractId);
+      if (symbol) {
+        for (const resources of this.accountResources.values()) {
+          resources.positionManager.onTick(symbol, event.last, new Date(event.timestamp));
+        }
+      }
+    };
+  }
+
+  /** Wire events for a single account's PositionManager */
+  private wireAccountEvents(resources: AccountResources): void {
+    const { positionManager, executor, accountId } = resources;
+
+    // Place orders
+    positionManager.on(
       'placeOrder',
       (params: { symbol: string; side: PositionSide; price: number; quantity: number; positionId: string }) => {
-        this.executor
-          .placeLimitEntry(params.symbol, params.side, params.price, params.quantity, this.config.accountId)
+        executor
+          .placeLimitEntry(params.symbol, params.side, params.price, params.quantity, accountId)
           .then((response) => {
             if (response.success && response.orderId > 0) {
-              const pos = this.positionManager.positions.get(params.symbol);
+              const pos = positionManager.positions.get(params.symbol);
               if (pos) {
                 pos.entryOrderId = response.orderId;
                 pos.dirty = true;
               }
             } else if (!response.success) {
-              // Order rejected by exchange — cancel the position
               logger.warn('Order rejected by exchange', {
                 symbol: params.symbol,
                 positionId: params.positionId,
+                accountId,
                 errorCode: response.errorCode,
                 errorMessage: response.errorMessage,
               });
-              const pos = this.positionManager.positions.get(params.symbol);
+              const pos = positionManager.positions.get(params.symbol);
               if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
                 const oldState = pos.state;
                 pos.state = 'cancelled';
@@ -273,7 +402,7 @@ export class BotRunner {
                 pos.closedAt = new Date();
                 pos.updatedAt = new Date();
                 pos.dirty = true;
-                this.positionManager.emit('stateChange', {
+                positionManager.emit('stateChange', {
                   positionId: pos.id,
                   oldState,
                   newState: 'cancelled' as PositionState,
@@ -284,17 +413,18 @@ export class BotRunner {
           })
           .catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : 'unknown';
-            logger.error('Failed to place order', { error: msg });
+            logger.error('Failed to place order', { error: msg, accountId });
           });
       },
     );
 
-    // Position manager → Log capacity exceeded events
-    this.positionManager.on(
+    // Capacity exceeded
+    positionManager.on(
       'capacityExceeded',
       (params: { symbol: string; currentMicroEquivalent: number; maxMicroEquivalent: number; requiredMicroEquivalent: number }) => {
         logger.warn('Capacity exceeded, skipping alert', {
           symbol: params.symbol,
+          accountId,
           currentMicroEquivalent: params.currentMicroEquivalent,
           maxMicroEquivalent: params.maxMicroEquivalent,
           requiredMicroEquivalent: params.requiredMicroEquivalent,
@@ -302,39 +432,39 @@ export class BotRunner {
       },
     );
 
-    // Position manager → Trade executor (cancel orders)
-    this.positionManager.on(
+    // Cancel orders
+    positionManager.on(
       'cancelOrder',
       (params: { orderId: number; positionId: string }) => {
-        this.executor
-          .cancelEntry(params.orderId, this.config.accountId)
+        executor
+          .cancelEntry(params.orderId, accountId)
           .catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : 'unknown';
-            logger.error('Failed to cancel order', { error: msg });
+            logger.error('Failed to cancel order', { error: msg, accountId });
           });
       },
     );
 
-    // Position manager → Trade executor (close positions)
-    this.positionManager.on(
+    // Close positions
+    positionManager.on(
       'closePosition',
       (params: { symbol: string; side: PositionSide; quantity: number; positionId: string; reason: string }) => {
-        this.executor
-          .marketClose(params.symbol, params.side, params.quantity, this.config.accountId)
+        executor
+          .marketClose(params.symbol, params.side, params.quantity, accountId)
           .then(() => {
-            const pos = this.positionManager.positions.get(params.symbol);
+            const pos = positionManager.positions.get(params.symbol);
             const exitPrice = pos?.lastPrice ?? pos?.currentSl ?? 0;
-            this.positionManager.onClose(params.symbol, exitPrice, params.reason);
+            positionManager.onClose(params.symbol, exitPrice, params.reason);
           })
           .catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : 'unknown';
-            logger.error('Failed to close position', { error: msg });
+            logger.error('Failed to close position', { error: msg, accountId });
           });
       },
     );
 
-    // Position manager → Retry entry (place dual limit orders)
-    this.positionManager.on(
+    // Retry entry
+    positionManager.on(
       'retryEntry',
       (params: {
         symbol: string;
@@ -346,15 +476,15 @@ export class BotRunner {
         retryCount: number;
         maxRetries: number;
       }) => {
-        this.handleRetryEntry(params).catch((err: unknown) => {
+        this.handleRetryEntry(params, resources).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : 'unknown';
-          logger.error('Failed to handle retry entry', { error: msg });
+          logger.error('Failed to handle retry entry', { error: msg, accountId });
         });
       },
     );
 
-    // Position manager → Supabase write queue (state changes)
-    this.positionManager.on(
+    // State changes -> write queue
+    positionManager.on(
       'stateChange',
       (params: { positionId: string; oldState: PositionState; newState: PositionState; position: ManagedPosition }) => {
         this.writeQueue.markDirty(params.position);
@@ -362,24 +492,50 @@ export class BotRunner {
         if (params.newState === 'pending_entry' && params.oldState === 'pending_entry') {
           this.writeQueue.createPosition(params.position).catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : 'unknown';
-            logger.error('Failed to create position in DB', { error: msg });
+            logger.error('Failed to create position in DB', { error: msg, accountId });
           });
         }
       },
     );
 
-    // Position manager → Supabase write queue (trade logs)
-    this.positionManager.on('positionClosed', (trade: TradeResult) => {
-      this.writeQueue.writeTradeLog(trade).catch((err: unknown) => {
+    // Trade logs
+    positionManager.on('positionClosed', (trade: TradeResult) => {
+      this.writeQueue.writeTradeLog(trade, accountId).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'unknown';
-        logger.error('Failed to write trade log', { error: msg });
+        logger.error('Failed to write trade log', { error: msg, accountId });
       });
     });
   }
 
   /**
-   * Handle retry entry — place two limit orders (stepped + fallback).
-   * Whichever fills first, the runner cancels the other.
+   * Resolve which account(s) should receive this alert.
+   * In multi-account mode, matches by alert name.
+   * In single-account mode, returns the single account.
+   */
+  private resolveAlertTargets(alert: AlertRow): AccountResources[] {
+    if (!this.multiAccountMode) {
+      // Single-account mode: route all alerts to the single account
+      return Array.from(this.accountResources.values());
+    }
+
+    // Multi-account mode: match by alert name
+    const alertName = alert.name ?? (alert.raw_payload?.name as string | undefined) ?? null;
+    if (!alertName) {
+      logger.warn('Alert has no name field, cannot route in multi-account mode', { alertId: alert.id });
+      return [];
+    }
+
+    const accountId = this.alertNameToAccountId.get(alertName);
+    if (accountId === undefined) {
+      return [];
+    }
+
+    const resources = this.accountResources.get(accountId);
+    return resources ? [resources] : [];
+  }
+
+  /**
+   * Handle retry entry for a specific account.
    */
   private async handleRetryEntry(params: {
     symbol: string;
@@ -389,10 +545,13 @@ export class BotRunner {
     quantity: number;
     positionId: string;
     retryCount: number;
-  }): Promise<void> {
+  }, resources: AccountResources): Promise<void> {
+    const { executor, positionManager, accountId, retryOrders } = resources;
+
     logger.info('Placing retry entry orders', {
       symbol: params.symbol,
       side: params.side,
+      accountId,
       steppedPrice: params.steppedPrice,
       fallbackPrice: params.fallbackPrice,
       retryCount: params.retryCount,
@@ -408,41 +567,36 @@ export class BotRunner {
         symbol: params.symbol,
       });
 
-      // In dry-run, just transition the position back to pending_entry
-      this.positionManager.onRetryOrderPlaced(params.symbol, params.retryCount);
+      positionManager.onRetryOrderPlaced(params.symbol, params.retryCount);
       return;
     }
 
-    // Place stepped limit order
-    const steppedResp = await this.executor.placeLimitEntry(
-      params.symbol, params.side, params.steppedPrice, params.quantity, this.config.accountId,
+    const steppedResp = await executor.placeLimitEntry(
+      params.symbol, params.side, params.steppedPrice, params.quantity, accountId,
     );
 
-    // Place fallback limit order at original level
-    const fallbackResp = await this.executor.placeLimitEntry(
-      params.symbol, params.side, params.fallbackPrice, params.quantity, this.config.accountId,
+    const fallbackResp = await executor.placeLimitEntry(
+      params.symbol, params.side, params.fallbackPrice, params.quantity, accountId,
     );
 
     if (steppedResp.success && fallbackResp.success) {
-      // Track both order IDs for cancel-on-fill logic
-      this.retryOrders.set(params.symbol, {
+      retryOrders.set(params.symbol, {
         steppedOrderId: steppedResp.orderId,
         fallbackOrderId: fallbackResp.orderId,
       });
 
-      // Set the stepped order as the primary entry order on the position
-      const pos = this.positionManager.positions.get(params.symbol);
+      const pos = positionManager.positions.get(params.symbol);
       if (pos) {
         pos.entryOrderId = steppedResp.orderId;
         pos.dirty = true;
       }
 
-      // Transition position back to pending_entry
-      this.positionManager.onRetryOrderPlaced(params.symbol, params.retryCount);
+      positionManager.onRetryOrderPlaced(params.symbol, params.retryCount);
     } else {
       logger.warn('Retry order placement failed', {
         steppedSuccess: steppedResp.success,
         fallbackSuccess: fallbackResp.success,
+        accountId,
       });
     }
   }
@@ -450,122 +604,135 @@ export class BotRunner {
   /**
    * When a retry order fills, cancel the other one.
    */
-  private handleRetryFill(filledOrderId: number): void {
-    for (const [symbol, orders] of this.retryOrders.entries()) {
+  private handleRetryFill(filledOrderId: number, resources: AccountResources): void {
+    const { executor, positionManager, accountId, retryOrders } = resources;
+
+    for (const [symbol, orders] of retryOrders.entries()) {
       if (filledOrderId === orders.steppedOrderId) {
-        // Stepped order filled — cancel fallback
-        this.executor.cancelEntry(orders.fallbackOrderId, this.config.accountId).catch((err: unknown) => {
+        executor.cancelEntry(orders.fallbackOrderId, accountId).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : 'unknown';
           logger.error('Failed to cancel fallback order', { error: msg });
         });
-        this.retryOrders.delete(symbol);
+        retryOrders.delete(symbol);
         return;
       }
 
       if (filledOrderId === orders.fallbackOrderId) {
-        // Fallback filled — cancel stepped, update position's entryOrderId
-        this.executor.cancelEntry(orders.steppedOrderId, this.config.accountId).catch((err: unknown) => {
+        executor.cancelEntry(orders.steppedOrderId, accountId).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : 'unknown';
           logger.error('Failed to cancel stepped order', { error: msg });
         });
 
-        // Update position to use fallback order ID
-        const pos = this.positionManager.positions.get(symbol);
+        const pos = positionManager.positions.get(symbol);
         if (pos) {
           pos.entryOrderId = orders.fallbackOrderId;
           pos.dirty = true;
         }
 
-        this.retryOrders.delete(symbol);
+        retryOrders.delete(symbol);
         return;
       }
     }
   }
 
   /**
-   * Reconcile bot position state with actual exchange positions.
-   * Detects EOD auto-liquidation and other exchange-side closes.
+   * Reconcile positions for all accounts.
    */
-  async reconcilePositions(): Promise<void> {
-    if (!this.running) return;
-
-    try {
-      const exchangePositions = await getPositions(this.config.accountId);
-
-      // Build a set of contractIds that have non-zero size on the exchange
-      const exchangeOpen = new Set<string>();
-      for (const pos of exchangePositions) {
-        if (pos.size !== 0) {
-          exchangeOpen.add(pos.contractId);
-        }
-      }
-
-      // Check each bot position against exchange state
-      for (const [symbol, botPos] of this.positionManager.positions.entries()) {
-        if (botPos.state === 'closed' || botPos.state === 'cancelled') continue;
-
-        const contractId = this.config.contractIds.get(symbol);
-        if (!contractId) continue;
-
-        // Bot thinks position is active but exchange has no position
-        if (!exchangeOpen.has(contractId)) {
-          const exitPrice = botPos.lastPrice ?? botPos.currentSl ?? 0;
-          logger.info('Position reconciliation: exchange position closed', {
-            symbol,
-            contractId,
-            botState: botPos.state,
-            exitPrice,
-          });
-          this.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
-        }
-      }
-
-      // Check for exchange positions the bot doesn't know about
-      for (const exPos of exchangePositions) {
-        if (exPos.size === 0) continue;
-        const symbol = this.contractToSymbol.get(exPos.contractId);
-        if (!symbol) {
-          logger.warn('Exchange position for unknown contract', {
-            contractId: exPos.contractId,
-            size: exPos.size,
-          });
-          continue;
-        }
-        const botPos = this.positionManager.positions.get(symbol);
-        if (!botPos || botPos.state === 'closed' || botPos.state === 'cancelled') {
-          logger.warn('Exchange has position bot does not track (manual trade?)', {
-            symbol,
-            contractId: exPos.contractId,
-            size: exPos.size,
-            averagePrice: exPos.averagePrice,
-          });
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'unknown';
-      logger.error('Position reconciliation error', { error: msg });
+  async reconcileAllPositions(): Promise<void> {
+    for (const resources of this.accountResources.values()) {
+      await this.reconcilePositions(resources);
     }
   }
 
-  private async handleNewAlert(alert: AlertRow): Promise<void> {
+  /**
+   * Reconcile bot position state with actual exchange positions for a specific account.
+   */
+  async reconcilePositions(resources?: AccountResources): Promise<void> {
+    if (!this.running) return;
+
+    // If no resources provided, reconcile for default account (backward compat)
+    const targets = resources
+      ? [resources]
+      : Array.from(this.accountResources.values());
+
+    for (const res of targets) {
+      try {
+        const exchangePositions = await getPositions(res.accountId);
+
+        const exchangeOpen = new Set<string>();
+        for (const pos of exchangePositions) {
+          if (pos.size !== 0) {
+            exchangeOpen.add(pos.contractId);
+          }
+        }
+
+        for (const [symbol, botPos] of res.positionManager.positions.entries()) {
+          if (botPos.state === 'closed' || botPos.state === 'cancelled') continue;
+
+          const contractId = this.config.contractIds.get(symbol);
+          if (!contractId) continue;
+
+          if (!exchangeOpen.has(contractId)) {
+            const exitPrice = botPos.lastPrice ?? botPos.currentSl ?? 0;
+            logger.info('Position reconciliation: exchange position closed', {
+              symbol,
+              contractId,
+              accountId: res.accountId,
+              botState: botPos.state,
+              exitPrice,
+            });
+            res.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+          }
+        }
+
+        for (const exPos of exchangePositions) {
+          if (exPos.size === 0) continue;
+          const symbol = this.contractToSymbol.get(exPos.contractId);
+          if (!symbol) {
+            logger.warn('Exchange position for unknown contract', {
+              contractId: exPos.contractId,
+              size: exPos.size,
+            });
+            continue;
+          }
+          const botPos = res.positionManager.positions.get(symbol);
+          if (!botPos || botPos.state === 'closed' || botPos.state === 'cancelled') {
+            logger.warn('Exchange has position bot does not track (manual trade?)', {
+              symbol,
+              contractId: exPos.contractId,
+              size: exPos.size,
+              averagePrice: exPos.averagePrice,
+            });
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'unknown';
+        logger.error('Position reconciliation error', { error: msg, accountId: res.accountId });
+      }
+    }
+  }
+
+  private async handleNewAlert(alert: AlertRow, resources: AccountResources): Promise<void> {
+    const { positionManager, accountId } = resources;
+
     logger.info('Processing alert', {
       alertId: alert.id,
       symbol: alert.symbol,
       action: alert.action,
+      accountId,
+      alertName: alert.name ?? (alert.raw_payload?.name as string | undefined),
     });
 
     if (alert.action === 'close' || alert.action === 'close_long' || alert.action === 'close_short') {
-      // Close alerts also clean up any pending retry orders
-      this.cleanupRetryOrders(alert.symbol);
+      this.cleanupRetryOrders(alert.symbol, resources);
 
-      this.positionManager.onAlert(alert, {
+      positionManager.onAlert(alert, {
         bins: [], poc: 0, vah: 0, val: 0, totalVolume: 0, rangeHigh: 0, rangeLow: 0, barCount: 0,
       });
       return;
     }
 
-    // Opposing signal — clean up retry orders for this symbol
-    this.cleanupRetryOrders(alert.symbol);
+    this.cleanupRetryOrders(alert.symbol, resources);
 
     const bars = await fetchBars(alert.symbol, 5, 60);
     const vpvr = calculateVpvr(bars);
@@ -575,7 +742,7 @@ export class BotRunner {
       return;
     }
 
-    this.positionManager.onAlert(alert, vpvr);
+    positionManager.onAlert(alert, vpvr);
 
     // Fire-and-forget LLM analysis
     const price = alert.price ?? vpvr.poc;
@@ -593,7 +760,7 @@ export class BotRunner {
       price,
     }).then((result) => {
       if (result) {
-        const pos = this.positionManager.positions.get(alert.symbol);
+        const pos = positionManager.positions.get(alert.symbol);
         if (pos) {
           pos.llmReasoning = result.reasoning;
           pos.llmConfidence = result.confidence;
@@ -606,12 +773,13 @@ export class BotRunner {
   }
 
   /** Cancel any pending retry orders for a symbol (on opposing signal or close) */
-  private cleanupRetryOrders(symbol: string): void {
-    const orders = this.retryOrders.get(symbol);
+  private cleanupRetryOrders(symbol: string, resources: AccountResources): void {
+    const { executor, accountId, retryOrders } = resources;
+    const orders = retryOrders.get(symbol);
     if (orders) {
-      this.executor.cancelEntry(orders.steppedOrderId, this.config.accountId).catch(() => {});
-      this.executor.cancelEntry(orders.fallbackOrderId, this.config.accountId).catch(() => {});
-      this.retryOrders.delete(symbol);
+      executor.cancelEntry(orders.steppedOrderId, accountId).catch(() => {});
+      executor.cancelEntry(orders.fallbackOrderId, accountId).catch(() => {});
+      retryOrders.delete(symbol);
     }
   }
 }

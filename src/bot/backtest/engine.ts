@@ -28,7 +28,7 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
   });
 
   // Fetch alerts from Supabase (filter by symbols array)
-  const { data: alerts, error } = await supabase
+  let alertQuery = supabase
     .from('alerts')
     .select('*')
     .in('symbol', config.symbols)
@@ -36,6 +36,13 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
     .lte('created_at', config.toDate)
     .in('action', ['buy', 'sell'])
     .order('created_at', { ascending: true });
+
+  // Filter by alert name if specified
+  if (config.alertName) {
+    alertQuery = alertQuery.eq('name', config.alertName);
+  }
+
+  const { data: alerts, error } = await alertQuery;
 
   if (error) {
     logger.error('Failed to fetch alerts for backtest', { error: error.message });

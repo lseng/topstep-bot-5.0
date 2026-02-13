@@ -28,6 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const to = req.query.to ? String(req.query.to) : undefined;
   const sort = req.query.sort ? String(req.query.sort) : 'created_at';
   const order = req.query.order === 'asc' ? 'asc' : 'desc';
+  const accountId = req.query.account_id ? parseInt(String(req.query.account_id), 10) : undefined;
 
   // Validate sort column
   if (!VALID_SORT_COLUMNS.includes(sort)) {
@@ -66,6 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (side) countQuery = countQuery.eq('side', side);
     if (from) countQuery = countQuery.gte('created_at', from);
     if (to) countQuery = countQuery.lte('created_at', to);
+    if (accountId) countQuery = countQuery.eq('account_id', accountId);
 
     const { count, error: countError } = await countQuery;
     if (countError) {
@@ -88,6 +90,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (side) dataQuery = dataQuery.eq('side', side);
     if (from) dataQuery = dataQuery.gte('created_at', from);
     if (to) dataQuery = dataQuery.lte('created_at', to);
+    if (accountId) dataQuery = dataQuery.eq('account_id', accountId);
 
     const { data, error: dataError } = await dataQuery;
     if (dataError) {

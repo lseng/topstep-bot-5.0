@@ -92,6 +92,13 @@ const columns: ColumnDef<PositionRow>[] = [
     ),
   },
   {
+    accessorKey: 'account_id',
+    header: 'Account',
+    cell: ({ getValue }) => (
+      <span className="font-mono text-xs text-muted-foreground">{getValue<number>()}</span>
+    ),
+  },
+  {
     accessorKey: 'side',
     header: 'Side',
     cell: ({ getValue }) => {

@@ -28,6 +28,7 @@ function buildRawPayload(payload: ParsedWebhookPayload): Record<string, unknown>
   if (payload.takeProfit !== undefined) raw.takeProfit = payload.takeProfit;
   if (payload.comment) raw.comment = payload.comment;
   if (payload.strategy) raw.strategy = payload.strategy;
+  if (payload.name) raw.name = payload.name;
 
   return raw;
 }
@@ -52,6 +53,7 @@ export async function saveAlert(payload: ParsedWebhookPayload): Promise<string> 
       comment: payload.comment ?? null,
       status,
       raw_payload: buildRawPayload(payload),
+      name: payload.name ?? null,
     };
 
     const { data, error } = await supabase

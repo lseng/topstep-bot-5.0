@@ -267,6 +267,9 @@ export function validateTradingViewPayload(body: unknown): {
   if (typeof data.comment === 'string') {
     payload.comment = data.comment;
   }
+  if (typeof data.name === 'string') {
+    payload.name = data.name;
+  }
 
   return { valid: true, payload };
 }

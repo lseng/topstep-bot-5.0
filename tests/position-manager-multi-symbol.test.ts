@@ -48,6 +48,7 @@ const multiSymbolConfig: PositionManagerConfig = {
   ]),
   symbols: ['MES', 'MNQ', 'MYM'],
   quantity: 1,
+  maxContracts: 30,
 };
 
 describe('PositionManager multi-symbol', () => {

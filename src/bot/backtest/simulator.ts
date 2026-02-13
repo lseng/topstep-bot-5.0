@@ -7,7 +7,7 @@ import type { SimulatedTrade } from './types';
 import type { ManagedPosition, PositionSide, PositionState } from '../types';
 import { calculateEntryPrice } from '../entry-calculator';
 import { evaluateTrailingStop } from '../trailing-stop';
-import { CONTRACT_SPECS } from '../../services/topstepx/types';
+import { CONTRACT_SPECS, getMicroEquivalent } from '../../services/topstepx/types';
 
 /** Simulator config */
 export interface SimulatorConfig {
@@ -15,12 +15,79 @@ export interface SimulatorConfig {
   quantity: number;
   /** Symbol for tick size lookup (default: 'ES') */
   symbol: string;
+  /** Maximum contracts in micro-equivalent units (default: 0 = unlimited) */
+  maxContracts: number;
 }
 
 const DEFAULT_CONFIG: SimulatorConfig = {
   quantity: 1,
   symbol: 'ES',
+  maxContracts: 0,
 };
+
+/**
+ * Result of capacity-aware batch simulation.
+ * Wraps trades plus capacity-exceeded stats.
+ */
+export interface BatchSimulationResult {
+  trades: SimulatedTrade[];
+  alertsSkipped: number;
+  capacityExceeded: number;
+}
+
+/**
+ * Simulate multiple trades sequentially with position capacity tracking.
+ * Tracks concurrent open positions and enforces maxContracts limit.
+ *
+ * Each trade is simulated independently; concurrent positions are tracked
+ * by checking if a prior trade's exit time is after the new alert's time.
+ *
+ * @param alertsWithData - Array of { alert, bars, vpvr } tuples
+ * @param config - Simulation configuration including maxContracts
+ * @returns BatchSimulationResult with trades, alertsSkipped, capacityExceeded
+ */
+export function simulateBatch(
+  alertsWithData: Array<{ alert: AlertRow; bars: Bar[]; vpvr: VpvrResult }>,
+  config?: Partial<SimulatorConfig>,
+): BatchSimulationResult {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const trades: SimulatedTrade[] = [];
+  let alertsSkipped = 0;
+  let capacityExceeded = 0;
+
+  for (const { alert, bars, vpvr } of alertsWithData) {
+    // Check capacity if maxContracts > 0
+    if (cfg.maxContracts > 0) {
+      const alertTime = new Date(alert.created_at).getTime();
+      // Count micro-equivalent units of concurrently open positions
+      let currentMicro = 0;
+      for (const t of trades) {
+        if (t.entryFilled && t.exitTime.getTime() > alertTime) {
+          currentMicro += getMicroEquivalent(t.symbol, cfg.quantity);
+        }
+      }
+
+      const requiredMicro = getMicroEquivalent(alert.symbol, cfg.quantity);
+      if (currentMicro + requiredMicro > cfg.maxContracts) {
+        alertsSkipped++;
+        capacityExceeded++;
+        continue;
+      }
+    }
+
+    const trade = simulateTrade(alert, bars, vpvr, {
+      quantity: cfg.quantity,
+      symbol: alert.symbol,
+      maxContracts: cfg.maxContracts,
+    });
+
+    if (trade) {
+      trades.push(trade);
+    }
+  }
+
+  return { trades, alertsSkipped, capacityExceeded };
+}
 
 /**
  * Simulate a single trade from an alert + historical bars + VPVR result.

@@ -14,6 +14,8 @@ export interface BacktestConfig {
   quantity: number;
   /** Whether to print verbose per-trade output */
   verbose: boolean;
+  /** Maximum contracts allowed across all symbols in micro-equivalent units (default: 30). 0 = unlimited. */
+  maxContracts: number;
 }
 
 /** A single simulated trade from the backtest */
@@ -80,4 +82,8 @@ export interface BacktestResult {
   maxDrawdown: number;
   /** Per-trade breakdown */
   trades: SimulatedTrade[];
+  /** Number of alerts skipped due to capacity limits */
+  alertsSkipped: number;
+  /** Number of times capacity was exceeded */
+  capacityExceeded: number;
 }

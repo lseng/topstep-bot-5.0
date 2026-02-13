@@ -38,12 +38,14 @@ async function main(): Promise<void> {
   const toDate = getArg(args, '--to');
   const verbose = args.includes('--verbose');
   const quantity = parseInt(getArg(args, '--quantity') ?? '1', 10);
+  const maxContracts = parseInt(getArg(args, '--max-contracts') ?? '0', 10);
 
   if (!fromDate || !toDate) {
-    console.error('Usage: npm run backtest -- --from <date> --to <date> [--symbols MES,MNQ] [--verbose] [--quantity 1]');
+    console.error('Usage: npm run backtest -- --from <date> --to <date> [--symbols MES,MNQ] [--verbose] [--quantity 1] [--max-contracts 30]');
     console.error('  Dates should be ISO 8601 format (e.g. 2026-01-01)');
-    console.error('  --symbols  Comma-separated list of symbols (default: ES)');
-    console.error('  --symbol   Single symbol (backward compat)');
+    console.error('  --symbols         Comma-separated list of symbols (default: ES)');
+    console.error('  --symbol          Single symbol (backward compat)');
+    console.error('  --max-contracts   Max contracts in micro-equivalent units (0 = unlimited, default: 0)');
     process.exit(1);
   }
 
@@ -55,6 +57,7 @@ async function main(): Promise<void> {
     symbols,
     quantity,
     verbose,
+    maxContracts,
   };
 
   console.log(`Running backtest for ${symbols.join(', ')} from ${fromDate} to ${toDate}...`);

@@ -27,6 +27,9 @@ export function formatBacktestReport(result: BacktestResult): string {
   lines.push('--- Summary ---');
   lines.push(`  Alerts evaluated:  ${result.alertsEvaluated}`);
   lines.push(`  Trades taken:      ${result.tradesTaken}`);
+  if (result.alertsSkipped > 0) {
+    lines.push(`  Alerts skipped:    ${result.alertsSkipped} (capacity exceeded)`);
+  }
   lines.push(`  Wins / Losses:     ${result.wins} / ${result.losses}`);
   lines.push(`  Win rate:          ${result.winRate.toFixed(1)}%`);
   lines.push('');

@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "validate": "npm run lint && npm run typecheck && npm run test && npm run test:e2e",
-    "db:migrate": "vite-node scripts/migrate.ts"
+    "db:migrate": "vite-node scripts/migrate.ts",
+    "bot": "vite-node src/bot/cli.ts"
   },
   "dependencies": {
     "@microsoft/signalr": "^8.0.0",

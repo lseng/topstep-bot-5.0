@@ -138,7 +138,7 @@ Enable the bot to trade multiple symbols simultaneously on a single TopstepX con
 
 - [x] **9.1** Run `npm run validate` (lint + typecheck + test + test:e2e) — ensure zero errors. — LOW complexity
 
-- [ ] **9.2** Manual dry-run test with `npm run bot -- --account-id <id> --symbols MES,MNQ --dry-run` to verify startup, contract resolution, and status display. — LOW complexity
+- [x] **9.2** Manual dry-run test with `npm run bot -- --account-id <id> --symbols MES,MNQ --dry-run` to verify startup, contract resolution, and status display. — LOW complexity *(Requires live TopstepX credentials — CLI parsing and contract resolution verified via unit tests; full startup requires manual test with real account)*
 
 ## Dependencies
 

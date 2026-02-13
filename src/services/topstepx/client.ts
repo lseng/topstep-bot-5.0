@@ -404,7 +404,7 @@ export async function getHistoricalBars(params: RetrieveBarsParams): Promise<Bar
     unit: params.unit,
     unitNumber: params.unitNumber,
   };
-  if (params.limit !== undefined) payload.limit = params.limit;
+  payload.limit = params.limit ?? 500;
 
   try {
     const data = await apiPost<BarsResponse>('/History/retrieveBars', payload);

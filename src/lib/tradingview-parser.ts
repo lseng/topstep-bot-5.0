@@ -8,6 +8,7 @@ import type {
   TradeAction,
   TradingViewAlert,
 } from '../types';
+import { normalizeSymbol } from './validation';
 
 // Valid trade actions
 const VALID_ACTIONS: TradeAction[] = ['buy', 'sell', 'close', 'close_long', 'close_short'];
@@ -93,7 +94,7 @@ export function parseTradingViewAlert(
   // Build the normalized payload
   const payload: ParsedWebhookPayload = {
     secret: data.secret,
-    symbol: symbol.toUpperCase(),
+    symbol: normalizeSymbol(symbol),
     action,
     quantity,
   };
@@ -202,7 +203,7 @@ export function parseCsvPayload(
   // Build the payload
   const payload: ParsedWebhookPayload = {
     secret,
-    symbol: ticker.toUpperCase(),
+    symbol: normalizeSymbol(ticker),
     action: normalizedAction,
     quantity: 1, // Default
   };

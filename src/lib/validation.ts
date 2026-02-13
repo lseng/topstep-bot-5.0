@@ -12,6 +12,15 @@ import type {
 const VALID_ACTIONS: TradeAction[] = ['buy', 'sell', 'close', 'close_long', 'close_short'];
 
 /**
+ * Normalizes a TradingView symbol by stripping continuous contract suffixes.
+ * e.g., "MES1!" → "MES", "NQ2!" → "NQ", "ES" → "ES"
+ */
+export function normalizeSymbol(symbol: string): string {
+  const match = symbol.trim().match(/^(.+?)\d+!$/);
+  return (match ? match[1] : symbol.trim()).toUpperCase();
+}
+
+/**
  * Validates that the provided secret matches the WEBHOOK_SECRET environment variable
  */
 export function validateWebhookSecret(secret: string | undefined): boolean {
@@ -75,7 +84,7 @@ export function validateWebhookPayload(body: unknown): {
   // Build validated payload
   const payload: WebhookAlert = {
     secret: data.secret as string,
-    symbol: data.symbol as string,
+    symbol: normalizeSymbol(data.symbol as string),
     action: data.action as TradeAction,
     quantity: data.quantity as number,
   };
@@ -195,7 +204,7 @@ export function validateTradingViewPayload(body: unknown): {
   // Build validated payload
   const payload: ParsedWebhookPayload = {
     secret: data.secret as string,
-    symbol: (symbol as string).toUpperCase(),
+    symbol: normalizeSymbol(symbol as string),
     action: (data.action as string).toLowerCase() as TradeAction,
     quantity: typeof data.quantity === 'number' ? data.quantity : 1,
   };

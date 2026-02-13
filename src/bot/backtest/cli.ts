@@ -32,7 +32,8 @@ async function loadEnv(): Promise<void> {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const symbol = getArg(args, '--symbol') ?? 'ES';
+  const symbolsArg = getArg(args, '--symbols') ?? getArg(args, '--symbol') ?? 'ES';
+  const symbols = symbolsArg.split(',').map((s) => s.trim().toUpperCase());
   const fromDate = getArg(args, '--from');
   const toDate = getArg(args, '--to');
   const verbose = args.includes('--verbose');
@@ -40,8 +41,10 @@ async function main(): Promise<void> {
   const quantity = parseInt(getArg(args, '--quantity') ?? '1', 10);
 
   if (!fromDate || !toDate) {
-    console.error('Usage: npm run backtest -- --from <date> --to <date> [--symbol ES] [--verbose] [--sl-buffer 8] [--quantity 1]');
+    console.error('Usage: npm run backtest -- --from <date> --to <date> [--symbols MES,MNQ] [--verbose] [--sl-buffer 8] [--quantity 1]');
     console.error('  Dates should be ISO 8601 format (e.g. 2026-01-01)');
+    console.error('  --symbols  Comma-separated list of symbols (default: ES)');
+    console.error('  --symbol   Single symbol (backward compat)');
     process.exit(1);
   }
 
@@ -50,13 +53,13 @@ async function main(): Promise<void> {
   const config: BacktestConfig = {
     fromDate,
     toDate,
-    symbol,
+    symbols,
     slBufferTicks,
     quantity,
     verbose,
   };
 
-  console.log(`Running backtest for ${symbol} from ${fromDate} to ${toDate}...`);
+  console.log(`Running backtest for ${symbols.join(', ')} from ${fromDate} to ${toDate}...`);
 
   const result = await runBacktest(config);
   const report = formatBacktestReport(result);

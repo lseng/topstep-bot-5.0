@@ -43,7 +43,7 @@ import type { SimulatedTrade } from '../../src/bot/backtest/types';
 const config: BacktestConfig = {
   fromDate: '2026-01-01T00:00:00Z',
   toDate: '2026-01-31T23:59:59Z',
-  symbol: 'ES',
+  symbols: ['ES'],
   slBufferTicks: 8,
   quantity: 1,
   verbose: true,
@@ -81,7 +81,7 @@ describe('Backtest (e2e)', () => {
     const result = await runBacktest(config);
 
     expect(result.alertsEvaluated).toBe(1);
-    expect(result.config.symbol).toBe('ES');
+    expect(result.config.symbols).toEqual(['ES']);
     // The trade should have been simulated (entry at VAL=5020, bars go down to 5015)
     expect(result.trades.length).toBeGreaterThanOrEqual(0);
   });

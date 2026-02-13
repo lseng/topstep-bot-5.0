@@ -22,16 +22,16 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
   const supabase = getSupabase();
 
   logger.info('Backtest starting', {
-    symbol: config.symbol,
+    symbols: config.symbols,
     from: config.fromDate,
     to: config.toDate,
   });
 
-  // Fetch alerts from Supabase
+  // Fetch alerts from Supabase (filter by symbols array)
   const { data: alerts, error } = await supabase
     .from('alerts')
     .select('*')
-    .eq('symbol', config.symbol)
+    .in('symbol', config.symbols)
     .gte('created_at', config.fromDate)
     .lte('created_at', config.toDate)
     .in('action', ['buy', 'sell'])
@@ -45,12 +45,19 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
   const alertRows = (alerts ?? []) as AlertRow[];
   logger.info(`Fetched ${alertRows.length} alerts for backtest`);
 
-  const contractId = getCurrentContractId(config.symbol);
+  // Pre-resolve contract IDs per symbol
+  const contractIdMap = new Map<string, string>();
+  for (const sym of config.symbols) {
+    contractIdMap.set(sym, getCurrentContractId(sym));
+  }
+
   const trades: SimulatedTrade[] = [];
 
   // Process each alert
   for (const alert of alertRows) {
     try {
+      const contractId = contractIdMap.get(alert.symbol) ?? getCurrentContractId(alert.symbol);
+
       // Fetch 5M bars around the alert timestamp (60 bars = 5 hours)
       const alertTime = new Date(alert.created_at);
       const startTime = new Date(alertTime.getTime() - 30 * 5 * 60 * 1000); // 30 bars before
@@ -77,11 +84,11 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
         continue;
       }
 
-      // Simulate the trade
+      // Simulate the trade using the alert's own symbol
       const trade = simulateTrade(alert, bars, vpvr, {
         slBufferTicks: config.slBufferTicks,
         quantity: config.quantity,
-        symbol: config.symbol,
+        symbol: alert.symbol,
       });
 
       if (trade) {

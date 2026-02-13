@@ -79,16 +79,16 @@ export interface ManagedPosition {
 export interface BotConfig {
   /** TopstepX account ID to trade on */
   accountId: number;
-  /** TopstepX contract ID (e.g. 'CON.F.US.EPH26') */
-  contractId: string;
+  /** TopstepX contract IDs keyed by symbol (e.g. { MES: 'CON.F.US.MES.H26' }) */
+  contractIds: Map<string, string>;
   /** If true, log orders but don't execute via API */
   dryRun: boolean;
   /** Number of ticks below/above entry for initial SL (default: 8) */
   slBufferTicks: number;
   /** Interval in ms to flush dirty positions to Supabase (default: 5000) */
   writeIntervalMs: number;
-  /** Trading symbol (e.g. 'ES') */
-  symbol: string;
+  /** Trading symbols (e.g. ['MES', 'MNQ', 'MYM']) */
+  symbols: string[];
   /** Number of contracts per trade (default: 1) */
   quantity: number;
 }

@@ -56,7 +56,7 @@ const mockSimulateTrade = vi.mocked(simulateTrade);
 const defaultConfig: BacktestConfig = {
   fromDate: '2026-01-01T00:00:00Z',
   toDate: '2026-01-31T23:59:59Z',
-  symbol: 'ES',
+  symbols: ['ES'],
   slBufferTicks: 8,
   quantity: 1,
   verbose: false,
@@ -94,7 +94,7 @@ describe('runBacktest', () => {
     await runBacktest(defaultConfig);
 
     expect(mockSupabase.from).toHaveBeenCalledWith('alerts');
-    expect(mockSupabase.eq).toHaveBeenCalledWith('symbol', 'ES');
+    expect(mockSupabase.in).toHaveBeenCalledWith('symbol', ['ES']);
     expect(mockSupabase.gte).toHaveBeenCalledWith('created_at', defaultConfig.fromDate);
     expect(mockSupabase.lte).toHaveBeenCalledWith('created_at', defaultConfig.toDate);
     expect(mockSupabase.in).toHaveBeenCalledWith('action', ['buy', 'sell']);

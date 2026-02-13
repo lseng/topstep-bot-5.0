@@ -9,8 +9,16 @@ interface OHLCVData {
   volume: number | null;
 }
 
+interface VpvrData {
+  poc: number | null;
+  vah: number | null;
+  val: number | null;
+  confirmationScore: number | null;
+}
+
 interface AlertDetailPanelProps {
   ohlcv?: OHLCVData;
+  vpvr?: VpvrData;
   interval?: string;
   alertTime?: string;
   comment?: string | null;
@@ -28,6 +36,7 @@ function formatNumber(val: number | null | undefined): string {
 
 export function AlertDetailPanel({
   ohlcv,
+  vpvr,
   interval,
   alertTime,
   comment,
@@ -87,6 +96,36 @@ export function AlertDetailPanel({
           )}
         </CardContent>
       </Card>
+
+      {vpvr && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">VPVR Levels</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <span className="text-muted-foreground">POC</span>
+                <div className="font-mono font-semibold">{formatNumber(vpvr.poc)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">VAH</span>
+                <div className="font-mono">{formatNumber(vpvr.vah)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">VAL</span>
+                <div className="font-mono">{formatNumber(vpvr.val)}</div>
+              </div>
+            </div>
+            {vpvr.confirmationScore != null && (
+              <div>
+                <span className="text-muted-foreground">Confirmation Score: </span>
+                <span className="font-mono font-semibold">{vpvr.confirmationScore}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="opacity-60">
         <CardHeader className="pb-3">

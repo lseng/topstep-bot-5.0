@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@dashboard/components/ui/card';
-import { Activity, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Activity, CheckCircle, XCircle, Clock, TrendingUp, DollarSign } from 'lucide-react';
 import { useTick } from '@dashboard/hooks/useTick';
 
 interface KpiCardsProps {
@@ -7,6 +7,8 @@ interface KpiCardsProps {
   successRate: number;
   failedCount: number;
   lastAlertTime: string | null;
+  openPositions?: number;
+  totalPnl?: number;
 }
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -22,11 +24,19 @@ function formatRelativeTime(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
+function formatPnl(val: number | undefined): string {
+  if (val == null) return '—';
+  if (val >= 0) return `+$${val.toFixed(2)}`;
+  return `-$${Math.abs(val).toFixed(2)}`;
+}
+
 export function KpiCards({
   totalAlerts,
   successRate,
   failedCount,
   lastAlertTime,
+  openPositions,
+  totalPnl,
 }: KpiCardsProps) {
   useTick();
   const cards = [
@@ -50,10 +60,20 @@ export function KpiCards({
       value: formatRelativeTime(lastAlertTime),
       icon: Clock,
     },
+    {
+      title: 'Open Positions',
+      value: openPositions != null ? openPositions.toLocaleString() : '—',
+      icon: TrendingUp,
+    },
+    {
+      title: 'Total P&L',
+      value: formatPnl(totalPnl),
+      icon: DollarSign,
+    },
   ];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {cards.map((card) => (
         <Card key={card.title}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">

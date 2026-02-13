@@ -38,6 +38,10 @@ npm run test:e2e               # End-to-end tests
 
 # Full validation
 npm run validate               # Runs lint + typecheck + test + test:e2e
+
+# Bot (local process with SignalR streaming)
+npm run bot -- --account-id <id> --symbol ES --quantity 1 --dry-run
+npm run backtest -- --from 2026-01-01 --to 2026-01-31 --symbol ES --verbose
 ```
 
 ## Supabase Database Commands
@@ -65,17 +69,41 @@ curl -s "https://mmudpobhfstanoenoumz.supabase.co/rest/v1/alerts?limit=5" \
 ```
 api/                           # Vercel serverless functions (SELF-CONTAINED)
 ├── webhook.ts                 # TradingView webhook handler
+├── alerts.ts                  # GET /api/alerts (paginated)
+├── alerts/[id].ts             # GET /api/alerts/:id (detail)
+├── positions.ts               # GET /api/positions (paginated)
+├── trades-log.ts              # GET /api/trades-log (paginated)
 ├── health.ts                  # Health check endpoint
 src/
 ├── lib/                       # Shared utilities
 │   ├── supabase.ts           # Supabase client
 │   ├── validation.ts         # Input validation
 │   └── logger.ts             # Structured logging
+├── bot/                       # Autonomous trading bot
+│   ├── runner.ts             # BotRunner orchestrator
+│   ├── cli.ts                # CLI entry point (`npm run bot`)
+│   ├── position-manager.ts   # Position state machine
+│   ├── trade-executor.ts     # TopstepX order execution
+│   ├── trailing-stop.ts      # TP/SL progression logic
+│   ├── entry-calculator.ts   # VPVR-based entry price calculation
+│   ├── alert-listener.ts     # Supabase Realtime alert subscription
+│   ├── supabase-writer.ts    # Rate-limited DB write queue
+│   ├── llm-analyzer.ts       # Fire-and-forget LLM trade analysis
+│   └── backtest/             # Backtesting engine
+│       ├── engine.ts         # Alert fetch + simulate + aggregate
+│       ├── simulator.ts      # Pure trade simulation
+│       ├── reporter.ts       # Terminal output formatting
+│       └── cli.ts            # CLI entry point (`npm run backtest`)
 ├── services/                  # External service clients
 │   └── topstepx/             # ProjectX Gateway API
 ├── types/                     # TypeScript definitions
 │   ├── index.ts              # Application types
 │   └── database.ts           # Supabase database types
+dashboard/                     # React dashboard (Vite + Tailwind)
+├── src/
+│   ├── App.tsx               # Tab nav: Alerts | Positions | Trade Log
+│   ├── hooks/                # React Query + Realtime hooks
+│   └── components/           # Tables, KPI cards, filters
 tests/                         # Test files
 ├── *.test.ts                 # Unit tests
 └── e2e/                      # End-to-end tests
@@ -113,6 +141,45 @@ error_message: TEXT
 order_id: TEXT
 executed_at: TIMESTAMPTZ
 raw_payload: JSONB
+```
+
+### positions
+Tracks live and historical trading positions managed by the bot.
+```sql
+id: UUID (PK)
+alert_id: UUID (FK → alerts.id)
+symbol: TEXT
+side: position_side (enum: long, short)
+state: position_state (enum: pending_entry, active, tp1_hit, tp2_hit, tp3_hit, closed, cancelled)
+entry_price: DECIMAL(12,4)
+target_entry_price: DECIMAL(12,4)
+quantity: INTEGER
+current_sl: DECIMAL(12,4)
+initial_sl: DECIMAL(12,4)
+tp1_price, tp2_price, tp3_price: DECIMAL(12,4)
+unrealized_pnl: DECIMAL(12,4) DEFAULT 0
+vpvr_poc, vpvr_vah, vpvr_val: DECIMAL(12,4)
+llm_reasoning: TEXT
+llm_confidence: DECIMAL(5,4)
+created_at, updated_at: TIMESTAMPTZ
+```
+
+### trades_log
+Immutable record of completed trades with full entry/exit data.
+```sql
+id: UUID (PK)
+position_id: UUID (FK → positions.id)
+symbol: TEXT
+side: position_side
+entry_price, exit_price: DECIMAL(12,4)
+quantity: INTEGER
+gross_pnl, net_pnl: DECIMAL(12,4)
+entry_time, exit_time: TIMESTAMPTZ
+exit_reason: TEXT
+highest_tp_hit: TEXT
+tp_progression: TEXT[]
+vpvr_poc, vpvr_vah, vpvr_val: DECIMAL(12,4)
+created_at: TIMESTAMPTZ
 ```
 
 **CRITICAL**: When implementing features that touch the database:

@@ -161,16 +161,27 @@ const columns: ColumnDef<AlertRow>[] = [
   },
 ];
 
+function extractVPVR(raw: Record<string, unknown>) {
+  const poc = typeof raw.vpvr_poc === 'number' ? raw.vpvr_poc : null;
+  const vah = typeof raw.vpvr_vah === 'number' ? raw.vpvr_vah : null;
+  const val = typeof raw.vpvr_val === 'number' ? raw.vpvr_val : null;
+  const confirmationScore = typeof raw.confirmation_score === 'number' ? raw.confirmation_score : null;
+  if (poc == null && vah == null && val == null) return undefined;
+  return { poc, vah, val, confirmationScore };
+}
+
 function ExpandedRow({ row }: { row: Row<AlertRow> }) {
   const alert = row.original;
   const raw = alert.raw_payload;
   const ohlcv = extractOHLCV(raw);
+  const vpvr = extractVPVR(raw);
   const interval = typeof raw.interval === 'string' ? raw.interval : undefined;
   const alertTime = typeof raw.alertTime === 'string' ? raw.alertTime : undefined;
 
   return (
     <AlertDetailPanel
       ohlcv={ohlcv}
+      vpvr={vpvr}
       interval={interval}
       alertTime={alertTime}
       comment={alert.comment}

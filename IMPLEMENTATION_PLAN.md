@@ -1,7 +1,7 @@
 # Implementation Plan
 
 **Last Updated:** 2026-02-12
-**Status:** PLANNING
+**Status:** BUILD COMPLETE
 **Spec:** `specs/autonomous-trading-pipeline-vpvr-based-entry-trail.md` (GitHub Issue #10)
 
 ## Summary
@@ -137,11 +137,11 @@ Build a complete autonomous trading pipeline on top of the existing webhook→VP
 
 ### Phase 10: Validation + Polish
 
-- [ ] **10.1** Run `npm run validate` — Ensure lint + typecheck + all tests (unit + e2e) pass with zero warnings
-- [ ] **10.2** Run `npm run bot -- --dry-run` — Verify CLI starts, connects to SignalR, shows live status, handles Ctrl+C
-- [ ] **10.3** Run `npm run backtest` — Verify backtest runs against stored alerts, prints formatted results
-- [ ] **10.4** Verify dashboard shows positions table and trade log with correct data
-- [ ] **10.5** Update `AGENTS.md` — Add new tables to schema section, add new env vars if any, add bot/backtest commands
+- [x] **10.1** Run `npm run validate` — Ensure lint + typecheck + all tests (unit + e2e) pass with zero warnings
+- [ ] **10.2** Run `npm run bot -- --dry-run` — Verify CLI starts, connects to SignalR, shows live status, handles Ctrl+C *(requires live TopstepX API credentials)*
+- [ ] **10.3** Run `npm run backtest` — Verify backtest runs against stored alerts, prints formatted results *(requires Supabase with seeded alerts)*
+- [ ] **10.4** Verify dashboard shows positions table and trade log with correct data *(requires running Vercel dev server)*
+- [x] **10.5** Update `AGENTS.md` — Add new tables to schema section, add new env vars if any, add bot/backtest commands
 
 ## Dependencies
 

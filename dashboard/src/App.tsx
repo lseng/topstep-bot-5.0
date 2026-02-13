@@ -4,6 +4,7 @@ import { DashboardLayout } from '@dashboard/components/DashboardLayout';
 import { LoginPage } from '@dashboard/components/LoginPage';
 import { KpiCards } from '@dashboard/components/KpiCards';
 import { AlertsFilter, type FilterState } from '@dashboard/components/AlertsFilter';
+import { SymbolFilter } from '@dashboard/components/SymbolFilter';
 import { AlertsTable } from '@dashboard/components/AlertsTable';
 import { PositionsTable } from '@dashboard/components/PositionsTable';
 import { TradeLogTable } from '@dashboard/components/TradeLogTable';
@@ -45,6 +46,7 @@ export function App() {
   const [positionsSorting, setPositionsSorting] = useState<SortingState>([
     { id: 'created_at', desc: true },
   ]);
+  const [positionsSymbolFilter, setPositionsSymbolFilter] = useState('');
 
   // Trades state
   const [tradesPage, setTradesPage] = useState(1);
@@ -52,6 +54,7 @@ export function App() {
   const [tradesSorting, setTradesSorting] = useState<SortingState>([
     { id: 'created_at', desc: true },
   ]);
+  const [tradesSymbolFilter, setTradesSymbolFilter] = useState('');
 
   const alertsSortColumn = alertsSorting[0]?.id ?? 'created_at';
   const alertsSortOrder = alertsSorting[0]?.desc ? 'desc' : 'asc';
@@ -75,6 +78,7 @@ export function App() {
   const { data: positionsData, isLoading: positionsLoading } = usePositions({
     page: positionsPage,
     limit: positionsLimit,
+    symbol: positionsSymbolFilter || undefined,
     sort: positionsSortColumn,
     order: positionsSortOrder,
   });
@@ -82,6 +86,7 @@ export function App() {
   const { data: tradesData, isLoading: tradesLoading } = useTradeLog({
     page: tradesPage,
     limit: tradesLimit,
+    symbol: tradesSymbolFilter || undefined,
     sort: tradesSortColumn,
     order: tradesSortOrder,
   });
@@ -94,9 +99,12 @@ export function App() {
   const tradesPagination = tradesData?.pagination ?? { page: 1, limit: 25, total: 0, totalPages: 0 };
 
   const symbols = useMemo(() => {
-    const set = new Set(alerts.map((a) => a.symbol));
+    const set = new Set<string>();
+    alerts.forEach((a) => set.add(a.symbol));
+    positions.forEach((p) => set.add(p.symbol));
+    trades.forEach((t) => set.add(t.symbol));
     return Array.from(set).sort();
-  }, [alerts]);
+  }, [alerts, positions, trades]);
 
   const kpiStats = useMemo(() => {
     const total = alertsPagination.total;
@@ -110,6 +118,12 @@ export function App() {
     ).length;
     const totalPnl = trades.reduce((sum, t) => sum + t.net_pnl, 0);
 
+    // Per-symbol P&L breakdown
+    const perSymbolPnl: Record<string, number> = {};
+    for (const t of trades) {
+      perSymbolPnl[t.symbol] = (perSymbolPnl[t.symbol] ?? 0) + t.net_pnl;
+    }
+
     return {
       totalAlerts: total,
       successRate,
@@ -117,6 +131,7 @@ export function App() {
       lastAlertTime: lastAlert,
       openPositions,
       totalPnl,
+      perSymbolPnl,
     };
   }, [alerts, alertsPagination.total, positions, trades]);
 
@@ -200,6 +215,11 @@ export function App() {
         {/* Positions Tab */}
         {activeTab === 'positions' && (
           <>
+            <SymbolFilter
+              value={positionsSymbolFilter}
+              symbols={symbols}
+              onChange={(v) => { setPositionsSymbolFilter(v); setPositionsPage(1); }}
+            />
             {positionsLoading ? (
               <div className="h-64 flex items-center justify-center">
                 <p className="text-muted-foreground">Loading positions...</p>
@@ -227,6 +247,11 @@ export function App() {
         {/* Trade Log Tab */}
         {activeTab === 'trades' && (
           <>
+            <SymbolFilter
+              value={tradesSymbolFilter}
+              symbols={symbols}
+              onChange={(v) => { setTradesSymbolFilter(v); setTradesPage(1); }}
+            />
             {tradesLoading ? (
               <div className="h-64 flex items-center justify-center">
                 <p className="text-muted-foreground">Loading trades...</p>

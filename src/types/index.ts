@@ -39,6 +39,8 @@ export interface TradingViewAlert {
   stopLoss?: number;
   takeProfit?: number;
   comment?: string;
+  /** Trading strategy identifier (e.g. 'vpvr', 'scalper'). Defaults to 'vpvr'. */
+  strategy?: string;
 }
 
 /**
@@ -69,6 +71,8 @@ export interface ParsedWebhookPayload {
   stopLoss?: number;
   takeProfit?: number;
   comment?: string;
+  /** Trading strategy identifier (e.g. 'vpvr', 'scalper'). Defaults to 'vpvr'. */
+  strategy?: string;
 }
 
 /**

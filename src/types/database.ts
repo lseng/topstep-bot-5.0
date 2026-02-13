@@ -27,6 +27,8 @@ export interface Database {
           order_id: string | null;
           executed_at: string | null;
           raw_payload: Record<string, unknown>;
+          /** Strategy name parsed from raw_payload (e.g. 'vpvr', 'scalper'). Null = default vpvr. */
+          strategy: string | null;
         };
         Insert: {
           id?: string;
@@ -44,6 +46,7 @@ export interface Database {
           order_id?: string | null;
           executed_at?: string | null;
           raw_payload: Record<string, unknown>;
+          strategy?: string | null;
         };
         Update: {
           id?: string;
@@ -61,6 +64,7 @@ export interface Database {
           order_id?: string | null;
           executed_at?: string | null;
           raw_payload?: Record<string, unknown>;
+          strategy?: string | null;
         };
       };
       positions: {

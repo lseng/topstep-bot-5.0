@@ -22,6 +22,7 @@ function makeAlert(overrides?: Partial<AlertRow>): AlertRow {
     order_id: null,
     executed_at: null,
     raw_payload: {},
+    strategy: null,
     ...overrides,
   };
 }

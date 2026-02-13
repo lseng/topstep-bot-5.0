@@ -38,6 +38,7 @@ vi.mock('../../src/services/topstepx/client', () => ({
   cancelOrder: vi.fn().mockResolvedValue(true),
   closePosition: vi.fn().mockResolvedValue({ success: true, orderId: 101, errorCode: 0, errorMessage: null }),
   getCurrentContractId: vi.fn().mockReturnValue('CON.F.US.EPH26'),
+  getPositions: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../../src/services/topstepx/streaming', () => ({
@@ -46,6 +47,7 @@ vi.mock('../../src/services/topstepx/streaming', () => ({
     disconnect: vi.fn().mockResolvedValue(undefined),
     isConnected: true,
     onOrderUpdate: null,
+    onPositionUpdate: null,
   })),
   MarketHubConnection: vi.fn().mockImplementation(() => ({
     connect: vi.fn().mockResolvedValue(undefined),
@@ -90,6 +92,7 @@ const defaultConfig: BotConfig = {
   maxContracts: 30,
   maxRetries: 0,
   slBufferTicks: 0,
+  syncIntervalMs: 0,
 };
 
 describe('Bot Lifecycle (e2e)', () => {
@@ -140,6 +143,7 @@ describe('Bot Lifecycle (e2e)', () => {
       order_id: null,
       executed_at: null,
       raw_payload: {},
+      strategy: null,
       updated_at: new Date().toISOString(),
     };
 
@@ -195,6 +199,7 @@ describe('Bot Lifecycle (e2e)', () => {
       order_id: null,
       executed_at: null,
       raw_payload: {},
+      strategy: null,
       updated_at: new Date().toISOString(),
     };
 
@@ -256,6 +261,7 @@ describe('Bot Lifecycle (e2e)', () => {
       order_id: null,
       executed_at: null,
       raw_payload: {},
+      strategy: null,
       updated_at: new Date().toISOString(),
     };
 

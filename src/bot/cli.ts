@@ -35,21 +35,25 @@ async function main(): Promise<void> {
   // Parse CLI args
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
-  const symbolsArg = getArg(args, '--symbols') ?? getArg(args, '--symbol') ?? 'ES';
-  const symbols = symbolsArg.split(',').map((s) => s.trim().toUpperCase());
+  const symbolsArg = getArg(args, '--symbols') ?? getArg(args, '--symbol');
+  const symbols = symbolsArg
+    ? symbolsArg.split(',').map((s) => s.trim().toUpperCase())
+    : []; // Empty = accept all known symbols dynamically
   const accountIdStr = getArg(args, '--account-id');
   const quantity = parseInt(getArg(args, '--quantity') ?? '1', 10);
   const maxContracts = parseInt(getArg(args, '--max-contracts') ?? '30', 10);
   const maxRetries = parseInt(getArg(args, '--max-retries') ?? '3', 10);
   const slBufferTicks = parseInt(getArg(args, '--sl-buffer') ?? '8', 10);
+  const syncIntervalMs = parseInt(getArg(args, '--sync-interval') ?? '60000', 10);
 
   if (!accountIdStr) {
-    console.error('Usage: npm run bot -- --account-id <id> [--symbols MES,MNQ,MYM] [--quantity 1] [--max-contracts 30] [--max-retries 3] [--sl-buffer 8] [--dry-run]');
-    console.error('  --symbols         Comma-separated list of symbols (default: ES)');
+    console.error('Usage: npm run bot -- --account-id <id> [--symbols MES,MNQ,MYM] [--quantity 1] [--max-contracts 30] [--max-retries 3] [--sl-buffer 8] [--sync-interval 60000] [--dry-run]');
+    console.error('  --symbols         Comma-separated list of symbols (empty = accept all known symbols)');
     console.error('  --symbol          Single symbol (backward compat, same as --symbols)');
     console.error('  --max-contracts   Max contracts in micro-equivalent units (default: 30)');
     console.error('  --max-retries     Max re-entry attempts after SL hit (default: 3)');
     console.error('  --sl-buffer       Fixed SL buffer in ticks (default: 8)');
+    console.error('  --sync-interval   Position reconciliation poll interval in ms (default: 60000, 0 = disabled)');
     process.exit(1);
   }
 
@@ -62,7 +66,7 @@ async function main(): Promise<void> {
   // Load env vars from .env.local
   await loadEnv();
 
-  // Resolve contract IDs for all symbols
+  // Resolve contract IDs for specified symbols (if any)
   const contractIds = new Map<string, string>();
   for (const sym of symbols) {
     contractIds.set(sym, getCurrentContractId(sym));
@@ -78,6 +82,7 @@ async function main(): Promise<void> {
     maxContracts,
     maxRetries,
     slBufferTicks,
+    syncIntervalMs,
   };
 
   const runner = new BotRunner(config);
@@ -97,7 +102,10 @@ async function main(): Promise<void> {
     console.log('╚══════════════════════════════════════════╝');
     console.log('');
     console.log(`  Mode:         ${config.dryRun ? 'DRY-RUN' : 'LIVE'}`);
-    console.log(`  Symbols:      ${config.symbols.join(', ')} (${config.symbols.length} contract${config.symbols.length > 1 ? 's' : ''})`);
+    const symbolsLabel = config.symbols.length > 0
+      ? `${config.symbols.join(', ')} (${config.symbols.length} symbol${config.symbols.length > 1 ? 's' : ''})`
+      : 'Dynamic (all known symbols)';
+    console.log(`  Symbols:      ${symbolsLabel}`);
     for (const [sym, cid] of config.contractIds.entries()) {
       console.log(`    ${sym}: ${cid}`);
     }
@@ -140,7 +148,8 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => { shutdown().catch(() => process.exit(1)); });
 
   // Start
-  console.log(`Starting bot for ${symbols.join(', ')} (${dryRun ? 'DRY-RUN' : 'LIVE'})...`);
+  const symbolsDisplay = symbols.length > 0 ? symbols.join(', ') : 'all known symbols (dynamic)';
+  console.log(`Starting bot for ${symbolsDisplay} (${dryRun ? 'DRY-RUN' : 'LIVE'})...`);
   await runner.start();
 
   // Render status every second

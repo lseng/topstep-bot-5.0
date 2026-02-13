@@ -27,6 +27,7 @@ function buildRawPayload(payload: ParsedWebhookPayload): Record<string, unknown>
   if (payload.stopLoss !== undefined) raw.stopLoss = payload.stopLoss;
   if (payload.takeProfit !== undefined) raw.takeProfit = payload.takeProfit;
   if (payload.comment) raw.comment = payload.comment;
+  if (payload.strategy) raw.strategy = payload.strategy;
 
   return raw;
 }

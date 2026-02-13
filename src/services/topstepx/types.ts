@@ -348,13 +348,33 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginOvernight: 1600,
     expiryCycle: 'monthly',
   },
+  NG: {
+    name: 'Natural Gas (Henry Hub)',
+    tickSize: 0.001,
+    tickValue: 10.0,
+    pointValue: 10000.0,
+    contractIdPrefix: 'CON.F.US.NG',
+    marginDay: 500,
+    marginOvernight: 2500,
+    expiryCycle: 'monthly',
+  },
+  QG: {
+    name: 'E-mini Natural Gas',
+    tickSize: 0.005,
+    tickValue: 12.5,
+    pointValue: 2500.0,
+    contractIdPrefix: 'CON.F.US.QG',
+    marginDay: 50,
+    marginOvernight: 500,
+    expiryCycle: 'monthly',
+  },
 };
 
 /**
  * Mini symbols that are equivalent to 10 micro contracts.
  * Used for position sizing: 1 mini = 10 micro-equivalent units.
  */
-export const MINI_SYMBOLS = new Set(['ES', 'NQ']);
+export const MINI_SYMBOLS = new Set(['ES', 'NQ', 'NG']);
 
 /**
  * Get the micro-equivalent unit count for a symbol.

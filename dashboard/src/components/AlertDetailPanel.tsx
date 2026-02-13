@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@dashboard/components/ui/card';
-import { Lock } from 'lucide-react';
+import { Lock, BarChart3 } from 'lucide-react';
 
 interface OHLCVData {
   open: number | null;
@@ -9,6 +9,13 @@ interface OHLCVData {
   volume: number | null;
 }
 
+interface VPVRData {
+  poc: number | null;
+  vah: number | null;
+  val: number | null;
+  confirmationScore: number | null;
+}
+
 interface AlertDetailPanelProps {
   ohlcv?: OHLCVData;
   interval?: string;
@@ -16,6 +23,7 @@ interface AlertDetailPanelProps {
   comment?: string | null;
   orderId?: string | null;
   status: string;
+  vpvr?: VPVRData;
 }
 
 function formatNumber(val: number | null | undefined): string {
@@ -33,9 +41,10 @@ export function AlertDetailPanel({
   comment,
   orderId,
   status,
+  vpvr,
 }: AlertDetailPanelProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 p-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 p-4">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">Alert Details</CardTitle>
@@ -120,6 +129,39 @@ export function AlertDetailPanel({
           </div>
         </CardContent>
       </Card>
+
+      {vpvr && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <BarChart3 className="size-3" />
+              VPVR Levels
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <span className="text-muted-foreground">POC</span>
+                <div className="font-mono font-semibold">{formatNumber(vpvr.poc)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">VAH</span>
+                <div className="font-mono">{formatNumber(vpvr.vah)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">VAL</span>
+                <div className="font-mono">{formatNumber(vpvr.val)}</div>
+              </div>
+            </div>
+            {vpvr.confirmationScore != null && (
+              <div className="pt-2 border-t">
+                <span className="text-muted-foreground">Confirmation Score: </span>
+                <span className="font-mono font-semibold">{vpvr.confirmationScore}/100</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

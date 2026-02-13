@@ -145,9 +145,9 @@ The spec's "What Already Exists" section lists VPVR Calculator, Confirmation Eng
 
 ### Phase 8: API Endpoints
 
-- [ ] **8.1** Create `api/positions.ts` — GET /api/positions: paginated, filterable by symbol/state/side, sorted by created_at desc. Self-contained Vercel function (inline Supabase client). Return positions with pagination metadata — Medium complexity
-- [ ] **8.2** Create `api/trades-log.ts` — GET /api/trades-log: paginated, filterable by symbol/side, sorted by exit_time desc. Self-contained. Return completed trades with pagination — Medium complexity
-- [ ] **8.3** Update `vercel.json` — Add rewrites for `/api/positions` and `/api/trades-log` (if needed for path params, otherwise auto-routed) — Low complexity
+- [x] **8.1** Create `api/positions.ts` — GET /api/positions: paginated, filterable by symbol/state/side, sorted by created_at desc. Self-contained Vercel function (inline Supabase client). Return positions with pagination metadata — Medium complexity
+- [x] **8.2** Create `api/trades-log.ts` — GET /api/trades-log: paginated, filterable by symbol/side, sorted by exit_time desc. Self-contained. Return completed trades with pagination — Medium complexity
+- [x] **8.3** Update `vercel.json` — Add rewrites for `/api/positions` and `/api/trades-log` (if needed for path params, otherwise auto-routed) — Low complexity (No changes needed: auto-routed)
 
 ### Phase 9: Dashboard Updates
 

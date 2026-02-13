@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@dashboard/components/ui/card';
-import { Activity, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Activity, CheckCircle, XCircle, Clock, DollarSign, Target } from 'lucide-react';
 import { useTick } from '@dashboard/hooks/useTick';
 
 interface KpiCardsProps {
@@ -7,6 +7,8 @@ interface KpiCardsProps {
   successRate: number;
   failedCount: number;
   lastAlertTime: string | null;
+  totalPnl?: number;
+  activePositions?: number;
 }
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -22,14 +24,21 @@ function formatRelativeTime(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
+function formatPnl(val: number): string {
+  const prefix = val >= 0 ? '+' : '';
+  return `${prefix}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function KpiCards({
   totalAlerts,
   successRate,
   failedCount,
   lastAlertTime,
+  totalPnl,
+  activePositions,
 }: KpiCardsProps) {
   useTick();
-  const cards = [
+  const cards: { title: string; value: string; icon: typeof Activity; className?: string }[] = [
     {
       title: 'Total Alerts',
       value: totalAlerts.toLocaleString(),
@@ -52,8 +61,25 @@ export function KpiCards({
     },
   ];
 
+  if (totalPnl !== undefined) {
+    cards.push({
+      title: 'Total P&L',
+      value: formatPnl(totalPnl),
+      icon: DollarSign,
+      className: totalPnl >= 0 ? 'text-green-500' : 'text-red-500',
+    });
+  }
+
+  if (activePositions !== undefined) {
+    cards.push({
+      title: 'Active Positions',
+      value: activePositions.toLocaleString(),
+      icon: Target,
+    });
+  }
+
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {cards.map((card) => (
         <Card key={card.title}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -63,7 +89,7 @@ export function KpiCards({
             <card.icon className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{card.value}</div>
+            <div className={`text-2xl font-bold ${card.className ?? ''}`}>{card.value}</div>
           </CardContent>
         </Card>
       ))}

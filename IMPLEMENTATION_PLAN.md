@@ -151,14 +151,14 @@ The spec's "What Already Exists" section lists VPVR Calculator, Confirmation Eng
 
 ### Phase 9: Dashboard Updates
 
-- [ ] **9.1** Create `dashboard/src/hooks/usePositions.ts` — React Query hook: fetch GET /api/positions with filters, polling — Low complexity
-- [ ] **9.2** Create `dashboard/src/hooks/useTradeLog.ts` — React Query hook: fetch GET /api/trades-log with filters — Low complexity
-- [ ] **9.3** Create `dashboard/src/hooks/useRealtimePositions.ts` — Supabase Realtime subscription on `positions` table. Invalidate React Query cache on INSERT/UPDATE — Medium complexity
-- [ ] **9.4** Create `dashboard/src/components/PositionsTable.tsx` — Table showing active positions: symbol, side, state, entry price, current price, unrealized P&L, current SL, TP levels. Color-coded P&L. Uses @tanstack/react-table — Medium complexity
-- [ ] **9.5** Create `dashboard/src/components/TradeLogTable.tsx` — Table showing completed trades: symbol, side, entry/exit prices+times, net P&L, TP hit, exit reason. Sortable, filterable — Medium complexity
-- [ ] **9.6** Update `dashboard/src/components/KpiCards.tsx` — Add two new KPI cards: Total P&L (sum of trades_log net_pnl) and Active Positions count — Medium complexity
-- [ ] **9.7** Update `dashboard/src/components/AlertDetailPanel.tsx` — Add VPVR section showing POC, VAH, VAL, confirmation score (from position's vpvr_data if linked) — Medium complexity
-- [ ] **9.8** Update `dashboard/src/App.tsx` — Add tab navigation for Alerts / Positions / Trade Log views. Wire up new hooks and components — Medium complexity
+- [x] **9.1** Create `dashboard/src/hooks/usePositions.ts` — React Query hook: fetch GET /api/positions with filters, polling — Low complexity
+- [x] **9.2** Create `dashboard/src/hooks/useTradeLog.ts` — React Query hook: fetch GET /api/trades-log with filters — Low complexity
+- [x] **9.3** Create `dashboard/src/hooks/useRealtimePositions.ts` — Supabase Realtime subscription on `positions` table. Invalidate React Query cache on INSERT/UPDATE — Medium complexity
+- [x] **9.4** Create `dashboard/src/components/PositionsTable.tsx` — Table showing active positions: symbol, side, state, entry price, current price, unrealized P&L, current SL, TP levels. Color-coded P&L. Uses @tanstack/react-table — Medium complexity
+- [x] **9.5** Create `dashboard/src/components/TradeLogTable.tsx` — Table showing completed trades: symbol, side, entry/exit prices+times, net P&L, TP hit, exit reason. Sortable, filterable — Medium complexity
+- [x] **9.6** Update `dashboard/src/components/KpiCards.tsx` — Add two new KPI cards: Total P&L (sum of trades_log net_pnl) and Active Positions count — Medium complexity
+- [x] **9.7** Update `dashboard/src/components/AlertDetailPanel.tsx` — Add VPVR section showing POC, VAH, VAL, confirmation score (from position's vpvr_data if linked) — Medium complexity
+- [x] **9.8** Update `dashboard/src/App.tsx` — Add tab navigation for Alerts / Positions / Trade Log views. Wire up new hooks and components — Medium complexity
 
 ### Phase 10: Testing
 

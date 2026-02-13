@@ -29,6 +29,8 @@ export interface Database {
           raw_payload: Record<string, unknown>;
           /** Strategy name parsed from raw_payload (e.g. 'vpvr', 'scalper'). Null = default vpvr. */
           strategy: string | null;
+          /** Alert name from TradingView (e.g. 'day-trader-medium-term-13'). Used for multi-account routing. */
+          name: string | null;
         };
         Insert: {
           id?: string;
@@ -47,6 +49,7 @@ export interface Database {
           executed_at?: string | null;
           raw_payload: Record<string, unknown>;
           strategy?: string | null;
+          name?: string | null;
         };
         Update: {
           id?: string;
@@ -65,6 +68,7 @@ export interface Database {
           executed_at?: string | null;
           raw_payload?: Record<string, unknown>;
           strategy?: string | null;
+          name?: string | null;
         };
       };
       positions: {
@@ -162,6 +166,7 @@ export interface Database {
           created_at: string;
           position_id: string | null;
           alert_id: string | null;
+          account_id: number | null;
           symbol: string;
           side: PositionSide;
           entry_price: number;
@@ -186,6 +191,7 @@ export interface Database {
           created_at?: string;
           position_id?: string | null;
           alert_id?: string | null;
+          account_id?: number | null;
           symbol: string;
           side: PositionSide;
           entry_price: number;
@@ -210,6 +216,7 @@ export interface Database {
           created_at?: string;
           position_id?: string | null;
           alert_id?: string | null;
+          account_id?: number | null;
           symbol?: string;
           side?: PositionSide;
           entry_price?: number;

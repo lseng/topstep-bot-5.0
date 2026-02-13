@@ -33,6 +33,7 @@ interface AlertRow {
   raw_payload: Record<string, unknown>;
   comment?: string | null;
   order_id?: string | null;
+  name?: string | null;
 }
 
 interface AlertsTableProps {
@@ -114,6 +115,16 @@ const columns: ColumnDef<AlertRow>[] = [
     cell: ({ getValue }) => (
       <span className="font-semibold">{getValue<string>()}</span>
     ),
+  },
+  {
+    accessorKey: 'name',
+    header: 'Name',
+    cell: ({ getValue }) => {
+      const name = getValue<string | null>();
+      return (
+        <span className="text-xs text-muted-foreground">{name ?? '---'}</span>
+      );
+    },
   },
   {
     accessorKey: 'action',

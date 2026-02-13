@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// Bot CLI — entry point for `npm run bot`
+// Bot CLI -- entry point for `npm run bot`
+// Supports both single-account and multi-account modes
 
 import { BotRunner } from './runner';
 import { getCurrentContractId } from '../services/topstepx/client';
-import type { BotConfig } from './types';
+import type { BotConfig, AccountStrategyConfig } from './types';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 function getArg(argv: string[], flag: string): string | undefined {
   const idx = argv.indexOf(flag);
@@ -29,7 +30,70 @@ async function loadEnv(): Promise<void> {
   }
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+/**
+ * Parse multi-account args from CLI.
+ * Supports repeated --account / --alert-name pairs with per-account overrides.
+ *
+ * Example:
+ *   --account 123 --alert-name strategy-A --sl-buffer 8 --max-retries 3
+ *   --account 456 --alert-name strategy-B --sl-buffer 4 --max-retries 1
+ *   --max-contracts 30 --dry-run
+ */
+function parseMultiAccountArgs(args: string[], globalDefaults: {
+  maxContracts: number;
+  maxRetries: number;
+  slBufferTicks: number;
+}): AccountStrategyConfig[] {
+  const accounts: AccountStrategyConfig[] = [];
+  let i = 0;
+
+  while (i < args.length) {
+    if (args[i] === '--account' && i + 1 < args.length) {
+      const accountId = parseInt(args[i + 1], 10);
+      if (isNaN(accountId)) {
+        i += 2;
+        continue;
+      }
+
+      // Start parsing per-account flags
+      i += 2;
+      let alertName = '';
+      let slBufferTicks = globalDefaults.slBufferTicks;
+      let maxRetries = globalDefaults.maxRetries;
+      let maxContracts = globalDefaults.maxContracts;
+
+      // Consume per-account flags until we hit another --account or end
+      while (i < args.length && args[i] !== '--account') {
+        if (args[i] === '--alert-name' && i + 1 < args.length) {
+          alertName = args[i + 1];
+          i += 2;
+        } else if (args[i] === '--sl-buffer' && i + 1 < args.length) {
+          slBufferTicks = parseInt(args[i + 1], 10);
+          i += 2;
+        } else if (args[i] === '--max-retries' && i + 1 < args.length) {
+          maxRetries = parseInt(args[i + 1], 10);
+          i += 2;
+        } else if (args[i] === '--max-contracts' && i + 1 < args.length) {
+          maxContracts = parseInt(args[i + 1], 10);
+          i += 2;
+        } else {
+          // Skip unknown flags (they're global)
+          i++;
+        }
+      }
+
+      if (alertName) {
+        accounts.push({ accountId, alertName, slBufferTicks, maxRetries, maxContracts });
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return accounts;
+}
+
+// --- Main ---
 
 async function main(): Promise<void> {
   // Parse CLI args
@@ -39,27 +103,32 @@ async function main(): Promise<void> {
   const symbols = symbolsArg
     ? symbolsArg.split(',').map((s) => s.trim().toUpperCase())
     : []; // Empty = accept all known symbols dynamically
-  const accountIdStr = getArg(args, '--account-id');
   const quantity = parseInt(getArg(args, '--quantity') ?? '1', 10);
   const maxContracts = parseInt(getArg(args, '--max-contracts') ?? '30', 10);
   const maxRetries = parseInt(getArg(args, '--max-retries') ?? '3', 10);
   const slBufferTicks = parseInt(getArg(args, '--sl-buffer') ?? '8', 10);
   const syncIntervalMs = parseInt(getArg(args, '--sync-interval') ?? '60000', 10);
 
-  if (!accountIdStr) {
-    console.error('Usage: npm run bot -- --account-id <id> [--symbols MES,MNQ,MYM] [--quantity 1] [--max-contracts 30] [--max-retries 3] [--sl-buffer 8] [--sync-interval 60000] [--dry-run]');
-    console.error('  --symbols         Comma-separated list of symbols (empty = accept all known symbols)');
-    console.error('  --symbol          Single symbol (backward compat, same as --symbols)');
-    console.error('  --max-contracts   Max contracts in micro-equivalent units (default: 30)');
-    console.error('  --max-retries     Max re-entry attempts after SL hit (default: 3)');
-    console.error('  --sl-buffer       Fixed SL buffer in ticks (default: 8)');
-    console.error('  --sync-interval   Position reconciliation poll interval in ms (default: 60000, 0 = disabled)');
-    process.exit(1);
-  }
+  // Check for multi-account mode: repeated --account flags
+  const multiAccounts = parseMultiAccountArgs(args, { maxContracts, maxRetries, slBufferTicks });
 
-  const accountId = parseInt(accountIdStr, 10);
-  if (isNaN(accountId)) {
-    console.error('Error: --account-id must be a number');
+  // Single-account mode: --account-id (backward compat)
+  const accountIdStr = getArg(args, '--account-id');
+
+  // Also support single account via --account with --alert-name
+  if (multiAccounts.length === 0 && !accountIdStr) {
+    console.error('Usage (single account):');
+    console.error('  npm run bot -- --account-id <id> [--alert-name <name>] [--symbols MES,MNQ] [--dry-run]');
+    console.error('');
+    console.error('Usage (multi-account):');
+    console.error('  npm run bot -- \\');
+    console.error('    --account 123 --alert-name strategy-A --sl-buffer 8 --max-retries 3 \\');
+    console.error('    --account 456 --alert-name strategy-B --sl-buffer 4 --max-retries 1 \\');
+    console.error('    --max-contracts 30 --dry-run');
+    console.error('');
+    console.error('Global flags: --symbols, --quantity, --max-contracts, --max-retries,');
+    console.error('  --sl-buffer, --sync-interval, --dry-run');
+    console.error('Per-account flags (after --account): --alert-name, --sl-buffer, --max-retries, --max-contracts');
     process.exit(1);
   }
 
@@ -72,18 +141,65 @@ async function main(): Promise<void> {
     contractIds.set(sym, getCurrentContractId(sym));
   }
 
-  const config: BotConfig = {
-    accountId,
-    contractIds,
-    dryRun,
-    writeIntervalMs: 5000,
-    symbols,
-    quantity,
-    maxContracts,
-    maxRetries,
-    slBufferTicks,
-    syncIntervalMs,
-  };
+  let config: BotConfig;
+
+  if (multiAccounts.length > 0) {
+    // Multi-account mode
+    const primaryAccountId = multiAccounts[0].accountId;
+
+    config = {
+      accountId: primaryAccountId,
+      contractIds,
+      dryRun,
+      writeIntervalMs: 5000,
+      symbols,
+      quantity,
+      maxContracts,
+      maxRetries,
+      slBufferTicks,
+      syncIntervalMs,
+      accounts: multiAccounts,
+    };
+
+    console.log(`Multi-account mode: ${multiAccounts.length} account-strategy pairs`);
+    for (const acct of multiAccounts) {
+      console.log(`  Account ${acct.accountId} <- alert "${acct.alertName}" (SL buffer: ${acct.slBufferTicks}, retries: ${acct.maxRetries})`);
+    }
+  } else {
+    // Single-account mode
+    const accountId = parseInt(accountIdStr!, 10);
+    if (isNaN(accountId)) {
+      console.error('Error: --account-id must be a number');
+      process.exit(1);
+    }
+
+    // Optional alert-name for single account filtering
+    const alertName = getArg(args, '--alert-name');
+
+    config = {
+      accountId,
+      contractIds,
+      dryRun,
+      writeIntervalMs: 5000,
+      symbols,
+      quantity,
+      maxContracts,
+      maxRetries,
+      slBufferTicks,
+      syncIntervalMs,
+    };
+
+    // If alert-name is specified in single-account mode, use multi-account routing
+    if (alertName) {
+      config.accounts = [{
+        accountId,
+        alertName,
+        slBufferTicks,
+        maxRetries,
+        maxContracts,
+      }];
+    }
+  }
 
   const runner = new BotRunner(config);
 
@@ -92,16 +208,13 @@ async function main(): Promise<void> {
 
   function renderStatus(): void {
     const status = runner.getStatus();
-    const positions = runner.positions.getActivePositions();
 
     // ANSI escape: clear screen and move cursor to top
     process.stdout.write('\x1b[2J\x1b[H');
 
-    console.log('╔══════════════════════════════════════════╗');
-    console.log('║       TopstepX Bot — Live Status         ║');
-    console.log('╚══════════════════════════════════════════╝');
+    console.log('==== TopstepX Bot -- Live Status ====');
     console.log('');
-    console.log(`  Mode:         ${config.dryRun ? 'DRY-RUN' : 'LIVE'}`);
+    console.log(`  Mode:         ${config.dryRun ? 'DRY-RUN' : 'LIVE'}${status.multiAccountMode ? ' (multi-account)' : ''}`);
     const symbolsLabel = config.symbols.length > 0
       ? `${config.symbols.join(', ')} (${config.symbols.length} symbol${config.symbols.length > 1 ? 's' : ''})`
       : 'Dynamic (all known symbols)';
@@ -109,7 +222,7 @@ async function main(): Promise<void> {
     for (const [sym, cid] of config.contractIds.entries()) {
       console.log(`    ${sym}: ${cid}`);
     }
-    console.log(`  Account:      ${config.accountId}`);
+    console.log(`  Accounts:     ${status.accountIds.join(', ')}`);
     console.log(`  Quantity:     ${config.quantity}`);
     console.log('');
     console.log(`  User Hub:     ${status.userHubConnected ? 'Connected' : 'Disconnected'}`);
@@ -118,15 +231,21 @@ async function main(): Promise<void> {
     console.log(`  Pending DB:   ${status.pendingWrites}`);
     console.log('');
 
-    if (positions.length > 0) {
-      console.log('  -- Active Positions ---------------------');
-      for (const pos of positions) {
-        const pnl = pos.unrealizedPnl >= 0
-          ? `+$${pos.unrealizedPnl.toFixed(2)}`
-          : `-$${Math.abs(pos.unrealizedPnl).toFixed(2)}`;
-        console.log(`  ${pos.symbol} ${pos.side.toUpperCase()} | ${pos.state} | P&L: ${pnl} | SL: ${pos.currentSl}`);
+    // Show per-account positions
+    for (const acctId of status.accountIds) {
+      const pm = runner.getPositionManager(acctId);
+      if (!pm) continue;
+      const positions = pm.getActivePositions();
+      if (positions.length > 0) {
+        console.log(`  -- Account ${acctId} Positions --`);
+        for (const pos of positions) {
+          const pnl = pos.unrealizedPnl >= 0
+            ? `+$${pos.unrealizedPnl.toFixed(2)}`
+            : `-$${Math.abs(pos.unrealizedPnl).toFixed(2)}`;
+          console.log(`  ${pos.symbol} ${pos.side.toUpperCase()} | ${pos.state} | P&L: ${pnl} | SL: ${pos.currentSl}`);
+        }
+        console.log('');
       }
-      console.log('');
     }
 
     console.log(`  Last update: ${new Date().toLocaleTimeString()}`);

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 interface PositionRow {
   id: string;
   alert_id: string;
+  account_id: number;
   symbol: string;
   side: 'long' | 'short';
   state: string;
@@ -45,6 +46,7 @@ interface UsePositionsParams {
   side?: string;
   sort?: string;
   order?: 'asc' | 'desc';
+  account_id?: number;
 }
 
 export type { PositionRow };

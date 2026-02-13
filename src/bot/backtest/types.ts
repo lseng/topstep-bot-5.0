@@ -20,6 +20,8 @@ export interface BacktestConfig {
   maxRetries: number;
   /** Fixed stop-loss buffer in ticks (default: 0 = use mirrored TP1) */
   slBufferTicks: number;
+  /** Optional alert name to filter alerts (only process alerts with this name) */
+  alertName?: string;
 }
 
 /** A single simulated trade from the backtest */

@@ -15,6 +15,7 @@ export interface FilterState {
   status: string;
   from: string;
   to: string;
+  name: string;
 }
 
 interface AlertsFilterProps {
@@ -35,7 +36,7 @@ export function AlertsFilter({
   const hasFilters = Object.values(filters).some((v) => v !== '');
 
   const clearFilters = () => {
-    onFilterChange({ symbol: '', action: '', status: '', from: '', to: '' });
+    onFilterChange({ symbol: '', action: '', status: '', from: '', to: '', name: '' });
   };
 
   return (
@@ -87,6 +88,14 @@ export function AlertsFilter({
           <SelectItem value="cancelled">Cancelled</SelectItem>
         </SelectContent>
       </Select>
+
+      <Input
+        type="text"
+        placeholder="Alert Name"
+        value={filters.name}
+        onChange={(e) => updateFilter('name', e.target.value)}
+        className="w-[160px] h-8 text-sm"
+      />
 
       <Input
         type="date"

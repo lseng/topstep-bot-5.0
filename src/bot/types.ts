@@ -86,9 +86,23 @@ export interface ManagedPosition {
   strategy: string;
 }
 
+/** Per-account strategy configuration for multi-account routing */
+export interface AccountStrategyConfig {
+  /** TopstepX account ID */
+  accountId: number;
+  /** Alert name to match from TradingView webhook (e.g. 'day-trader-medium-term-13') */
+  alertName: string;
+  /** Fixed stop-loss buffer in ticks (overrides global default) */
+  slBufferTicks: number;
+  /** Maximum re-entry attempts per signal after SL hit (overrides global default) */
+  maxRetries: number;
+  /** Maximum contracts allowed across all symbols in micro-equivalent units */
+  maxContracts: number;
+}
+
 /** Bot configuration */
 export interface BotConfig {
-  /** TopstepX account ID to trade on */
+  /** TopstepX account ID to trade on (primary account for single-account mode) */
   accountId: number;
   /** TopstepX contract IDs keyed by symbol (e.g. { MES: 'CON.F.US.MES.H26' }) */
   contractIds: Map<string, string>;
@@ -108,6 +122,8 @@ export interface BotConfig {
   slBufferTicks: number;
   /** Interval in ms for position reconciliation polling (default: 60000). 0 = disabled. */
   syncIntervalMs: number;
+  /** Multi-account strategy configs. If set, alerts are routed by name to specific accounts. */
+  accounts?: AccountStrategyConfig[];
 }
 
 /** Result of a completed trade, used for logging */

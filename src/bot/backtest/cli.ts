@@ -41,15 +41,17 @@ async function main(): Promise<void> {
   const maxContracts = parseInt(getArg(args, '--max-contracts') ?? '0', 10);
   const maxRetries = parseInt(getArg(args, '--max-retries') ?? '0', 10);
   const slBufferTicks = parseInt(getArg(args, '--sl-buffer') ?? '0', 10);
+  const alertName = getArg(args, '--alert-name');
 
   if (!fromDate || !toDate) {
-    console.error('Usage: npm run backtest -- --from <date> --to <date> [--symbols MES,MNQ] [--verbose] [--quantity 1] [--max-contracts 30] [--max-retries 3] [--sl-buffer 8]');
+    console.error('Usage: npm run backtest -- --from <date> --to <date> [--symbols MES,MNQ] [--verbose] [--quantity 1] [--max-contracts 30] [--max-retries 3] [--sl-buffer 8] [--alert-name <name>]');
     console.error('  Dates should be ISO 8601 format (e.g. 2026-01-01)');
     console.error('  --symbols         Comma-separated list of symbols (default: ES)');
     console.error('  --symbol          Single symbol (backward compat)');
     console.error('  --max-contracts   Max contracts in micro-equivalent units (0 = unlimited, default: 0)');
     console.error('  --max-retries     Max re-entry attempts after SL hit (0 = disabled, default: 0)');
     console.error('  --sl-buffer       Fixed SL buffer in ticks (0 = mirrored TP1, default: 0)');
+    console.error('  --alert-name      Filter alerts by name (e.g. "day-trader-medium-term-13")');
     process.exit(1);
   }
 
@@ -64,6 +66,7 @@ async function main(): Promise<void> {
     maxContracts,
     maxRetries,
     slBufferTicks,
+    alertName,
   };
 
   console.log(`Running backtest for ${symbols.join(', ')} from ${fromDate} to ${toDate}...`);

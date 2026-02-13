@@ -103,11 +103,11 @@ Build a complete autonomous trading pipeline on top of the existing webhook→VP
 
 ### Phase 6: Backtest Engine
 
-- [ ] **6.1** Create `src/bot/backtest/engine.ts` — `runBacktest(config: BacktestConfig): Promise<BacktestResult>`. Fetches alerts from Supabase (filtered by date range, symbol). For each alert, fetches historical 5M bars at that timestamp via `getHistoricalBars()`, runs `calculateVpvr()`, then `simulateTrade()`. Aggregates results: win rate, total/avg P&L, profit factor (gross wins / gross losses), Sharpe ratio, max drawdown, per-trade breakdown.
-- [ ] **6.2** Create `src/bot/backtest/engine.test.ts` — ~15 tests: Fetches correct alerts, handles empty alerts, simulation aggregation math, win rate calculation, profit factor, Sharpe ratio, max drawdown tracking, date range filtering
-- [ ] **6.3** Create `src/bot/backtest/reporter.ts` — `formatBacktestReport(result: BacktestResult): string`. Formats results for terminal output: summary stats table, per-trade breakdown, P&L curve (ASCII), win/loss distribution. Uses ANSI colors for profit (green) / loss (red).
-- [ ] **6.4** Create `src/bot/backtest/cli.ts` — Entry point for `npm run backtest`. Parses CLI args (`--symbol`, `--from`, `--to`, `--verbose`). Loads env vars. Runs `runBacktest()`, prints report via `formatBacktestReport()`.
-- [ ] **6.5** Create `src/bot/backtest/index.ts` — Barrel export
+- [x] **6.1** Create `src/bot/backtest/engine.ts` — `runBacktest(config: BacktestConfig): Promise<BacktestResult>`. Fetches alerts from Supabase (filtered by date range, symbol). For each alert, fetches historical 5M bars at that timestamp via `getHistoricalBars()`, runs `calculateVpvr()`, then `simulateTrade()`. Aggregates results: win rate, total/avg P&L, profit factor (gross wins / gross losses), Sharpe ratio, max drawdown, per-trade breakdown.
+- [x] **6.2** Create `src/bot/backtest/engine.test.ts` — ~15 tests: Fetches correct alerts, handles empty alerts, simulation aggregation math, win rate calculation, profit factor, Sharpe ratio, max drawdown tracking, date range filtering
+- [x] **6.3** Create `src/bot/backtest/reporter.ts` — `formatBacktestReport(result: BacktestResult): string`. Formats results for terminal output: summary stats table, per-trade breakdown, P&L curve (ASCII), win/loss distribution. Uses ANSI colors for profit (green) / loss (red).
+- [x] **6.4** Create `src/bot/backtest/cli.ts` — Entry point for `npm run backtest`. Parses CLI args (`--symbol`, `--from`, `--to`, `--verbose`). Loads env vars. Runs `runBacktest()`, prints report via `formatBacktestReport()`.
+- [x] **6.5** Create `src/bot/backtest/index.ts` — Barrel export
 
 ### Phase 7: API Endpoints
 

@@ -36,6 +36,9 @@ export class BotRunner {
   /** Reverse lookup: contractId → symbol for quote routing */
   private contractToSymbol: Map<string, string>;
 
+  /** Track pending retry order IDs: symbol → { steppedOrderId, fallbackOrderId } */
+  private retryOrders = new Map<string, { steppedOrderId: number; fallbackOrderId: number }>();
+
   constructor(config: BotConfig) {
     this.config = config;
     this.userHub = new UserHubConnection();
@@ -47,6 +50,8 @@ export class BotRunner {
       symbols: config.symbols,
       quantity: config.quantity,
       maxContracts: config.maxContracts,
+      maxRetries: config.maxRetries,
+      slBufferTicks: config.slBufferTicks,
     });
     this.executor = new TradeExecutor(config.dryRun);
     this.writeQueue = new SupabaseWriteQueue(config.writeIntervalMs);
@@ -159,6 +164,8 @@ export class BotRunner {
     // User Hub → Position manager (order fills)
     this.userHub.onOrderUpdate = (event: GatewayOrderEvent): void => {
       if (event.status === (OrderStatusNum.FILLED as number) && event.fillPrice != null) {
+        // Check if this is a retry fill — cancel the other order
+        this.handleRetryFill(event.orderId);
         this.positionManager.onOrderFill(event.orderId, event.fillPrice);
       }
     };
@@ -260,6 +267,26 @@ export class BotRunner {
       },
     );
 
+    // Position manager → Retry entry (place dual limit orders)
+    this.positionManager.on(
+      'retryEntry',
+      (params: {
+        symbol: string;
+        side: PositionSide;
+        steppedPrice: number;
+        fallbackPrice: number;
+        quantity: number;
+        positionId: string;
+        retryCount: number;
+        maxRetries: number;
+      }) => {
+        this.handleRetryEntry(params).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Failed to handle retry entry', { error: msg });
+        });
+      },
+    );
+
     // Position manager → Supabase write queue (state changes)
     this.positionManager.on(
       'stateChange',
@@ -284,6 +311,111 @@ export class BotRunner {
     });
   }
 
+  /**
+   * Handle retry entry — place two limit orders (stepped + fallback).
+   * Whichever fills first, the runner cancels the other.
+   */
+  private async handleRetryEntry(params: {
+    symbol: string;
+    side: PositionSide;
+    steppedPrice: number;
+    fallbackPrice: number;
+    quantity: number;
+    positionId: string;
+    retryCount: number;
+  }): Promise<void> {
+    logger.info('Placing retry entry orders', {
+      symbol: params.symbol,
+      side: params.side,
+      steppedPrice: params.steppedPrice,
+      fallbackPrice: params.fallbackPrice,
+      retryCount: params.retryCount,
+    });
+
+    if (this.config.dryRun) {
+      logger.info('[DRY-RUN] Would place stepped limit at', {
+        price: params.steppedPrice,
+        symbol: params.symbol,
+      });
+      logger.info('[DRY-RUN] Would place fallback limit at', {
+        price: params.fallbackPrice,
+        symbol: params.symbol,
+      });
+
+      // In dry-run, just transition the position back to pending_entry
+      this.positionManager.onRetryOrderPlaced(params.symbol, params.retryCount);
+      return;
+    }
+
+    // Place stepped limit order
+    const steppedResp = await this.executor.placeLimitEntry(
+      params.symbol, params.side, params.steppedPrice, params.quantity, this.config.accountId,
+    );
+
+    // Place fallback limit order at original level
+    const fallbackResp = await this.executor.placeLimitEntry(
+      params.symbol, params.side, params.fallbackPrice, params.quantity, this.config.accountId,
+    );
+
+    if (steppedResp.success && fallbackResp.success) {
+      // Track both order IDs for cancel-on-fill logic
+      this.retryOrders.set(params.symbol, {
+        steppedOrderId: steppedResp.orderId,
+        fallbackOrderId: fallbackResp.orderId,
+      });
+
+      // Set the stepped order as the primary entry order on the position
+      const pos = this.positionManager.positions.get(params.symbol);
+      if (pos) {
+        pos.entryOrderId = steppedResp.orderId;
+        pos.dirty = true;
+      }
+
+      // Transition position back to pending_entry
+      this.positionManager.onRetryOrderPlaced(params.symbol, params.retryCount);
+    } else {
+      logger.warn('Retry order placement failed', {
+        steppedSuccess: steppedResp.success,
+        fallbackSuccess: fallbackResp.success,
+      });
+    }
+  }
+
+  /**
+   * When a retry order fills, cancel the other one.
+   */
+  private handleRetryFill(filledOrderId: number): void {
+    for (const [symbol, orders] of this.retryOrders.entries()) {
+      if (filledOrderId === orders.steppedOrderId) {
+        // Stepped order filled — cancel fallback
+        this.executor.cancelEntry(orders.fallbackOrderId, this.config.accountId).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Failed to cancel fallback order', { error: msg });
+        });
+        this.retryOrders.delete(symbol);
+        return;
+      }
+
+      if (filledOrderId === orders.fallbackOrderId) {
+        // Fallback filled — cancel stepped, update position's entryOrderId
+        this.executor.cancelEntry(orders.steppedOrderId, this.config.accountId).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Failed to cancel stepped order', { error: msg });
+        });
+
+        // Update position to use fallback order ID
+        const pos = this.positionManager.positions.get(symbol);
+        if (pos) {
+          pos.entryOrderId = orders.fallbackOrderId;
+          pos.dirty = true;
+        }
+
+        this.retryOrders.delete(symbol);
+        return;
+      }
+    }
+  }
+
   private async handleNewAlert(alert: AlertRow): Promise<void> {
     logger.info('Processing alert', {
       alertId: alert.id,
@@ -292,11 +424,17 @@ export class BotRunner {
     });
 
     if (alert.action === 'close' || alert.action === 'close_long' || alert.action === 'close_short') {
+      // Close alerts also clean up any pending retry orders
+      this.cleanupRetryOrders(alert.symbol);
+
       this.positionManager.onAlert(alert, {
         bins: [], poc: 0, vah: 0, val: 0, totalVolume: 0, rangeHigh: 0, rangeLow: 0, barCount: 0,
       });
       return;
     }
+
+    // Opposing signal — clean up retry orders for this symbol
+    this.cleanupRetryOrders(alert.symbol);
 
     const bars = await fetchBars(alert.symbol, 5, 60);
     const vpvr = calculateVpvr(bars);
@@ -334,5 +472,15 @@ export class BotRunner {
     }).catch(() => {
       // LLM is fire-and-forget
     });
+  }
+
+  /** Cancel any pending retry orders for a symbol (on opposing signal or close) */
+  private cleanupRetryOrders(symbol: string): void {
+    const orders = this.retryOrders.get(symbol);
+    if (orders) {
+      this.executor.cancelEntry(orders.steppedOrderId, this.config.accountId).catch(() => {});
+      this.executor.cancelEntry(orders.fallbackOrderId, this.config.accountId).catch(() => {});
+      this.retryOrders.delete(symbol);
+    }
   }
 }

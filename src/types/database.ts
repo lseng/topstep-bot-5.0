@@ -4,7 +4,7 @@
 export type TradeAction = 'buy' | 'sell' | 'close' | 'close_long' | 'close_short';
 export type OrderType = 'market' | 'limit' | 'stop' | 'stop_limit';
 export type AlertStatus = 'received' | 'processing' | 'executed' | 'failed' | 'cancelled';
-export type PositionState = 'pending_entry' | 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'closed' | 'cancelled';
+export type PositionState = 'pending_entry' | 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'closed' | 'cancelled' | 'pending_retry';
 export type PositionSide = 'long' | 'short';
 
 export interface Database {

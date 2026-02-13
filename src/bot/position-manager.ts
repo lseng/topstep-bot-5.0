@@ -5,7 +5,7 @@ import type { AlertRow } from '../types/database';
 import type { VpvrResult } from '../services/vpvr/types';
 import type { ManagedPosition, PositionState, PositionSide, TradeResult } from './types';
 import type { EntryCalculation } from './entry-calculator';
-import { calculateEntryPrice } from './entry-calculator';
+import { calculateEntryPrice, calculateRetryEntryLevels, calculateSlFromEntry } from './entry-calculator';
 import { evaluateTrailingStop } from './trailing-stop';
 import { CONTRACT_SPECS, getMicroEquivalent } from '../services/topstepx/types';
 
@@ -48,6 +48,17 @@ export interface PositionManagerEvents {
     maxMicroEquivalent: number;
     requiredMicroEquivalent: number;
   }) => void;
+  /** Re-entry requested after SL hit from active state */
+  retryEntry: (params: {
+    symbol: string;
+    side: PositionSide;
+    steppedPrice: number;
+    fallbackPrice: number;
+    quantity: number;
+    positionId: string;
+    retryCount: number;
+    maxRetries: number;
+  }) => void;
 }
 
 /** Configuration for the position manager */
@@ -58,6 +69,10 @@ export interface PositionManagerConfig {
   quantity: number;
   /** Maximum contracts allowed across all symbols in micro-equivalent units (default: 30) */
   maxContracts: number;
+  /** Maximum re-entry attempts per signal after SL hit (default: 3) */
+  maxRetries: number;
+  /** Fixed stop-loss buffer in ticks (default: 8) */
+  slBufferTicks: number;
 }
 
 /**
@@ -67,6 +82,7 @@ export interface PositionManagerConfig {
  *   alert → pending_entry (limit order placed)
  *   fill → active (SL set)
  *   tick → evaluates trailing stop (TP progression / SL breach)
+ *   SL hit from active → pending_retry (if retries remain) → retryEntry event
  *   close → closed (trade result emitted)
  *
  * Emits typed events for I/O actions (place/cancel/close orders, state changes).
@@ -89,22 +105,26 @@ export class PositionManager extends EventEmitter {
   onAlert(alert: AlertRow, vpvr: VpvrResult, confirmationScore?: number): void {
     const { symbol, action } = alert;
 
-    // Close actions → close existing position
+    // Close actions → close existing position (cancels any pending retry)
     if (action === 'close' || action === 'close_long' || action === 'close_short') {
       const existing = this.positions.get(symbol);
       if (existing && existing.state !== 'closed' && existing.state !== 'cancelled') {
-        this.closeExisting(existing, 'close_alert');
+        if (existing.state === 'pending_retry' || existing.state === 'pending_entry') {
+          this.cancelExisting(existing, 'close_alert');
+        } else {
+          this.closeExisting(existing, 'close_alert');
+        }
       }
       return;
     }
 
     const newSide: PositionSide = action === 'buy' ? 'long' : 'short';
 
-    // Cancel/close existing position on same symbol if any
+    // Cancel/close existing position on same symbol if any (including pending_retry)
     const existing = this.positions.get(symbol);
     if (existing && existing.state !== 'closed' && existing.state !== 'cancelled') {
-      if (existing.state === 'pending_entry') {
-        // Cancel pending entry
+      if (existing.state === 'pending_entry' || existing.state === 'pending_retry') {
+        // Cancel pending entry or pending retry
         this.cancelExisting(existing, 'opposing_alert');
       } else {
         // Close active position
@@ -131,13 +151,19 @@ export class PositionManager extends EventEmitter {
       return;
     }
 
-    // Calculate entry from VPVR
-    const entry = calculateEntryPrice(action, vpvr);
+    // Calculate entry from VPVR (with slBufferTicks if configured)
+    const entry = calculateEntryPrice(action, vpvr, {
+      symbol: alert.symbol,
+      slBufferTicks: this.config.slBufferTicks,
+    });
 
     if (!entry) return;
 
+    // Calculate retry entry levels for the full ladder
+    const retryLevels = calculateRetryEntryLevels(newSide, vpvr, this.config.maxRetries);
+
     // Create new managed position
-    const position = this.createPosition(alert, vpvr, entry, newSide, confirmationScore);
+    const position = this.createPosition(alert, vpvr, entry, newSide, retryLevels, confirmationScore);
     this.positions.set(symbol, position);
 
     // Emit place order event
@@ -169,6 +195,15 @@ export class PositionManager extends EventEmitter {
     position.entryPrice = fillPrice;
     position.updatedAt = new Date();
     position.dirty = true;
+
+    // Recalculate SL from actual fill price when using tick buffer
+    if (this.config.slBufferTicks > 0) {
+      const newSl = calculateSlFromEntry(
+        fillPrice, position.side, position.symbol, this.config.slBufferTicks,
+      );
+      position.currentSl = newSl;
+      position.initialSl = newSl;
+    }
 
     this.emit('stateChange', {
       positionId: position.id,
@@ -235,12 +270,62 @@ export class PositionManager extends EventEmitter {
 
   /**
    * Handle position close (from SL breach or manual close).
+   *
+   * If the close was an SL hit from `active` state (no TP hit yet) and retries
+   * remain, transitions to `pending_retry` and emits `retryEntry` instead of
+   * fully closing.
    */
   onClose(symbol: string, exitPrice: number, reason: string): void {
     const position = this.positions.get(symbol);
     if (!position || position.state === 'closed' || position.state === 'cancelled') return;
 
     const oldState = position.state;
+
+    // Check if this is an SL hit from active state with retries remaining
+    const isSLHitFromActive = reason.startsWith('sl_hit_from_active') && oldState === 'active';
+    const hasRetriesLeft = position.retryCount < position.maxRetries;
+
+    if (isSLHitFromActive && hasRetriesLeft) {
+      // Emit trade result for this leg before retrying
+      position.exitPrice = exitPrice;
+      position.exitReason = reason;
+      position.closedAt = new Date();
+      position.updatedAt = new Date();
+      position.dirty = true;
+
+      if (position.entryPrice != null) {
+        const trade = this.buildTradeResult(position);
+        this.emit('positionClosed', trade);
+      }
+
+      // Transition to pending_retry
+      position.state = 'pending_retry';
+      const nextRetryCount = position.retryCount + 1;
+      const steppedPrice = position.retryEntryLevels[nextRetryCount] ?? position.retryEntryLevels[0];
+      const fallbackPrice = position.retryEntryLevels[0]; // Original VAL/VAH
+
+      this.emit('stateChange', {
+        positionId: position.id,
+        oldState,
+        newState: 'pending_retry',
+        position,
+      });
+
+      // Emit retryEntry event for the runner to place orders
+      this.emit('retryEntry', {
+        symbol,
+        side: position.side,
+        steppedPrice,
+        fallbackPrice,
+        quantity: position.quantity,
+        positionId: position.id,
+        retryCount: nextRetryCount,
+        maxRetries: position.maxRetries,
+      });
+      return;
+    }
+
+    // Normal close — no retry
     position.state = 'closed';
     position.exitPrice = exitPrice;
     position.exitReason = reason;
@@ -260,6 +345,35 @@ export class PositionManager extends EventEmitter {
       const trade = this.buildTradeResult(position);
       this.emit('positionClosed', trade);
     }
+  }
+
+  /**
+   * Transition a position from pending_retry back to pending_entry.
+   * Called by the runner after placing retry limit orders.
+   */
+  onRetryOrderPlaced(symbol: string, retryCount: number): void {
+    const position = this.positions.get(symbol);
+    if (!position || position.state !== 'pending_retry') return;
+
+    const oldState = position.state;
+    position.retryCount = retryCount;
+    position.state = 'pending_entry';
+    position.entryPrice = undefined;
+    position.exitPrice = undefined;
+    position.exitReason = undefined;
+    position.closedAt = undefined;
+    position.updatedAt = new Date();
+    position.dirty = true;
+
+    // Reset SL — will be recalculated on fill
+    position.currentSl = position.initialSl;
+
+    this.emit('stateChange', {
+      positionId: position.id,
+      oldState,
+      newState: 'pending_entry',
+      position,
+    });
   }
 
   /** Get all active (non-closed, non-cancelled) positions */
@@ -306,6 +420,7 @@ export class PositionManager extends EventEmitter {
     vpvr: VpvrResult,
     entry: EntryCalculation,
     side: PositionSide,
+    retryLevels: number[],
     confirmationScore?: number,
   ): ManagedPosition {
     this.positionCounter++;
@@ -332,6 +447,10 @@ export class PositionManager extends EventEmitter {
       createdAt: now,
       updatedAt: now,
       dirty: true,
+      retryCount: 0,
+      maxRetries: this.config.maxRetries,
+      originalAlertId: alert.id,
+      retryEntryLevels: retryLevels,
     };
   }
 
@@ -427,6 +546,8 @@ export class PositionManager extends EventEmitter {
       highestTpHit,
       confirmationScore: position.confirmationScore,
       llmReasoning: position.llmReasoning,
+      retryCount: position.retryCount,
+      originalAlertId: position.originalAlertId,
     };
   }
 }

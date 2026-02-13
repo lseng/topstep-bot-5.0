@@ -88,6 +88,8 @@ const defaultConfig: BotConfig = {
   symbols: ['ES'],
   quantity: 1,
   maxContracts: 30,
+  maxRetries: 0,
+  slBufferTicks: 0,
 };
 
 describe('Bot Lifecycle (e2e)', () => {

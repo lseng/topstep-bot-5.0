@@ -40,12 +40,16 @@ async function main(): Promise<void> {
   const accountIdStr = getArg(args, '--account-id');
   const quantity = parseInt(getArg(args, '--quantity') ?? '1', 10);
   const maxContracts = parseInt(getArg(args, '--max-contracts') ?? '30', 10);
+  const maxRetries = parseInt(getArg(args, '--max-retries') ?? '3', 10);
+  const slBufferTicks = parseInt(getArg(args, '--sl-buffer') ?? '8', 10);
 
   if (!accountIdStr) {
-    console.error('Usage: npm run bot -- --account-id <id> [--symbols MES,MNQ,MYM] [--quantity 1] [--max-contracts 30] [--dry-run]');
+    console.error('Usage: npm run bot -- --account-id <id> [--symbols MES,MNQ,MYM] [--quantity 1] [--max-contracts 30] [--max-retries 3] [--sl-buffer 8] [--dry-run]');
     console.error('  --symbols         Comma-separated list of symbols (default: ES)');
     console.error('  --symbol          Single symbol (backward compat, same as --symbols)');
     console.error('  --max-contracts   Max contracts in micro-equivalent units (default: 30)');
+    console.error('  --max-retries     Max re-entry attempts after SL hit (default: 3)');
+    console.error('  --sl-buffer       Fixed SL buffer in ticks (default: 8)');
     process.exit(1);
   }
 
@@ -72,6 +76,8 @@ async function main(): Promise<void> {
     symbols,
     quantity,
     maxContracts,
+    maxRetries,
+    slBufferTicks,
   };
 
   const runner = new BotRunner(config);

@@ -5,7 +5,7 @@ import type { Bar } from '../../services/topstepx/types';
 import type { VpvrResult } from '../../services/vpvr/types';
 import type { SimulatedTrade } from './types';
 import type { ManagedPosition, PositionSide, PositionState } from '../types';
-import { calculateEntryPrice } from '../entry-calculator';
+import { calculateEntryPrice, calculateRetryEntryLevels, calculateSlFromEntry } from '../entry-calculator';
 import { evaluateTrailingStop } from '../trailing-stop';
 import { CONTRACT_SPECS, getMicroEquivalent } from '../../services/topstepx/types';
 
@@ -17,12 +17,18 @@ export interface SimulatorConfig {
   symbol: string;
   /** Maximum contracts in micro-equivalent units (default: 0 = unlimited) */
   maxContracts: number;
+  /** Maximum re-entry attempts per signal after SL hit (default: 0 = no retries) */
+  maxRetries: number;
+  /** Fixed stop-loss buffer in ticks (default: 0 = use mirrored TP1) */
+  slBufferTicks: number;
 }
 
 const DEFAULT_CONFIG: SimulatorConfig = {
   quantity: 1,
   symbol: 'ES',
   maxContracts: 0,
+  maxRetries: 0,
+  slBufferTicks: 0,
 };
 
 /**
@@ -79,14 +85,261 @@ export function simulateBatch(
       quantity: cfg.quantity,
       symbol: alert.symbol,
       maxContracts: cfg.maxContracts,
+      maxRetries: cfg.maxRetries,
+      slBufferTicks: cfg.slBufferTicks,
     });
 
     if (trade) {
       trades.push(trade);
+
+      // If retries are enabled, simulate re-entries after SL from active
+      if (cfg.maxRetries > 0 && trade.entryFilled && isSlHitFromActive(trade.exitReason)) {
+        const retryTrades = simulateRetries(
+          alert, bars, vpvr, trade, cfg,
+        );
+        trades.push(...retryTrades);
+      }
     }
   }
 
   return { trades, alertsSkipped, capacityExceeded };
+}
+
+/** Check if exit reason indicates SL hit from active (no TP reached) */
+function isSlHitFromActive(exitReason: string): boolean {
+  return exitReason === 'sl_hit_from_active';
+}
+
+/**
+ * Simulate retry entries after an initial SL hit from active state.
+ *
+ * For each retry, scan remaining bars for fill at either the stepped level
+ * or the fallback (original) level. Whichever fills first becomes the new entry.
+ *
+ * @returns Array of SimulatedTrade for each retry attempt
+ */
+function simulateRetries(
+  alert: AlertRow,
+  bars: Bar[],
+  vpvr: VpvrResult,
+  previousTrade: SimulatedTrade,
+  cfg: SimulatorConfig,
+): SimulatedTrade[] {
+  const retryTrades: SimulatedTrade[] = [];
+  const side: PositionSide = alert.action === 'buy' ? 'long' : 'short';
+  const isLong = side === 'long';
+  const retryLevels = calculateRetryEntryLevels(side, vpvr, cfg.maxRetries);
+  const originalLevel = retryLevels[0]; // VAL or VAH
+
+  let lastExitTime = previousTrade.exitTime;
+  let lastExitReason = previousTrade.exitReason;
+
+  for (let retry = 1; retry <= cfg.maxRetries; retry++) {
+    // Only retry if previous exit was SL from active
+    if (!isSlHitFromActive(lastExitReason)) break;
+
+    const steppedLevel = retryLevels[retry] ?? originalLevel;
+
+    // Find the bar index where the last trade exited
+    const exitTimeMs = lastExitTime.getTime();
+    const startBarIdx = bars.findIndex((b) => new Date(b.t).getTime() >= exitTimeMs);
+    if (startBarIdx === -1) break; // No more bars
+
+    // Scan for fill at either stepped or fallback level
+    let fillBarIndex = -1;
+    let fillPrice = steppedLevel;
+
+    for (let i = startBarIdx; i < bars.length; i++) {
+      const bar = bars[i];
+
+      // Check stepped level fill
+      const steppedFilled = isLong ? bar.l <= steppedLevel : bar.h >= steppedLevel;
+      // Check fallback level fill
+      const fallbackFilled = isLong ? bar.l <= originalLevel : bar.h >= originalLevel;
+
+      if (steppedFilled) {
+        fillBarIndex = i;
+        fillPrice = steppedLevel;
+        break;
+      }
+      if (fallbackFilled) {
+        fillBarIndex = i;
+        fillPrice = originalLevel;
+        break;
+      }
+    }
+
+    // Entry never fills for this retry
+    if (fillBarIndex === -1) {
+      retryTrades.push({
+        alertId: alert.id,
+        symbol: alert.symbol,
+        side,
+        entryPrice: steppedLevel,
+        entryTime: lastExitTime,
+        exitPrice: 0,
+        exitTime: lastExitTime,
+        exitReason: 'entry_never_filled',
+        highestTpHit: null,
+        tpProgression: [],
+        grossPnl: 0,
+        netPnl: 0,
+        vpvrPoc: vpvr.poc,
+        vpvrVah: vpvr.vah,
+        vpvrVal: vpvr.val,
+        entryFilled: false,
+        retryCount: retry,
+        originalAlertId: alert.id,
+      });
+      break;
+    }
+
+    // Calculate SL from fill price
+    const slBufferTicks = cfg.slBufferTicks;
+    const symbol = cfg.symbol || alert.symbol;
+    const initialSl = slBufferTicks > 0
+      ? calculateSlFromEntry(fillPrice, side, symbol, slBufferTicks)
+      : ((): number => {
+          // Mirrored TP1 distance
+          const tp1Distance = isLong ? vpvr.poc - fillPrice : fillPrice - vpvr.poc;
+          return isLong ? fillPrice - tp1Distance : fillPrice + tp1Distance;
+        })();
+
+    // Same TP levels as original
+    const entry = calculateEntryPrice(alert.action, vpvr, {
+      symbol: alert.symbol,
+      slBufferTicks: cfg.slBufferTicks,
+    });
+    if (!entry) break;
+
+    // Build position for trailing stop evaluation
+    const position: ManagedPosition = {
+      id: `sim-retry-${alert.id}-${retry}`,
+      alertId: alert.id,
+      symbol: alert.symbol,
+      side,
+      state: 'active' as PositionState,
+      entryPrice: fillPrice,
+      targetEntryPrice: steppedLevel,
+      quantity: cfg.quantity,
+      contractId: '',
+      accountId: 0,
+      currentSl: initialSl,
+      initialSl,
+      tp1Price: entry.tp1,
+      tp2Price: entry.tp2,
+      tp3Price: entry.tp3,
+      unrealizedPnl: 0,
+      vpvrData: vpvr,
+      createdAt: new Date(bars[fillBarIndex].t),
+      updatedAt: new Date(bars[fillBarIndex].t),
+      dirty: false,
+      retryCount: retry,
+      maxRetries: cfg.maxRetries,
+      originalAlertId: alert.id,
+      retryEntryLevels: retryLevels,
+    };
+
+    const tpProgression: string[] = [];
+    let highestTpHit: string | null = null;
+    let tradeExited = false;
+
+    // Walk remaining bars for TP/SL
+    for (let i = fillBarIndex; i < bars.length; i++) {
+      const bar = bars[i];
+
+      const pricesToCheck = isLong
+        ? [bar.l, bar.h]
+        : [bar.h, bar.l];
+
+      for (const price of pricesToCheck) {
+        const result = evaluateTrailingStop(position, price);
+
+        if (result.shouldClose) {
+          const exitPrice = position.currentSl;
+          const pnl = calculatePnl(side, fillPrice, exitPrice, cfg.quantity, alert.symbol);
+
+          const trade: SimulatedTrade = {
+            alertId: alert.id,
+            symbol: alert.symbol,
+            side,
+            entryPrice: fillPrice,
+            entryTime: new Date(bars[fillBarIndex].t),
+            exitPrice,
+            exitTime: new Date(bar.t),
+            exitReason: result.closeReason ?? 'sl_hit',
+            highestTpHit,
+            tpProgression,
+            grossPnl: pnl,
+            netPnl: pnl,
+            vpvrPoc: vpvr.poc,
+            vpvrVah: vpvr.vah,
+            vpvrVal: vpvr.val,
+            entryFilled: true,
+            retryCount: retry,
+            originalAlertId: alert.id,
+          };
+
+          retryTrades.push(trade);
+          lastExitTime = new Date(bar.t);
+          lastExitReason = result.closeReason ?? 'sl_hit';
+          tradeExited = true;
+          break;
+        }
+
+        if (result.newState) {
+          position.state = result.newState;
+          position.updatedAt = new Date(bar.t);
+          if (result.newSl != null) {
+            position.currentSl = result.newSl;
+          }
+          if (result.newState === 'tp1_hit') {
+            tpProgression.push('tp1');
+            highestTpHit = 'tp1';
+          } else if (result.newState === 'tp2_hit') {
+            tpProgression.push('tp2');
+            highestTpHit = 'tp2';
+          } else if (result.newState === 'tp3_hit') {
+            tpProgression.push('tp3');
+            highestTpHit = 'tp3';
+          }
+        }
+      }
+
+      if (tradeExited) break;
+    }
+
+    if (!tradeExited) {
+      // Bars exhausted
+      const lastBar = bars[bars.length - 1];
+      const exitPrice = lastBar.c;
+      const pnl = calculatePnl(side, fillPrice, exitPrice, cfg.quantity, alert.symbol);
+
+      retryTrades.push({
+        alertId: alert.id,
+        symbol: alert.symbol,
+        side,
+        entryPrice: fillPrice,
+        entryTime: new Date(bars[fillBarIndex].t),
+        exitPrice,
+        exitTime: new Date(lastBar.t),
+        exitReason: 'bars_exhausted',
+        highestTpHit,
+        tpProgression,
+        grossPnl: pnl,
+        netPnl: pnl,
+        vpvrPoc: vpvr.poc,
+        vpvrVah: vpvr.vah,
+        vpvrVal: vpvr.val,
+        entryFilled: true,
+        retryCount: retry,
+        originalAlertId: alert.id,
+      });
+      break;
+    }
+  }
+
+  return retryTrades;
 }
 
 /**
@@ -111,8 +364,11 @@ export function simulateTrade(
 ): SimulatedTrade | null {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
-  // Calculate entry levels
-  const entry = calculateEntryPrice(alert.action, vpvrResult);
+  // Calculate entry levels (with slBufferTicks if configured)
+  const entry = calculateEntryPrice(alert.action, vpvrResult, {
+    symbol: cfg.symbol || alert.symbol,
+    slBufferTicks: cfg.slBufferTicks,
+  });
 
   // Close actions have no entry
   if (!entry) return null;
@@ -156,8 +412,15 @@ export function simulateTrade(
       vpvrVah: vpvrResult.vah,
       vpvrVal: vpvrResult.val,
       entryFilled: false,
+      retryCount: 0,
+      originalAlertId: alert.id,
     };
   }
+
+  // Calculate actual SL from fill price if using tick buffer
+  const initialSl = cfg.slBufferTicks > 0
+    ? calculateSlFromEntry(fillPrice, side, cfg.symbol || alert.symbol, cfg.slBufferTicks)
+    : entry.initialSl;
 
   // Build a minimal ManagedPosition for trailing stop evaluation
   const position: ManagedPosition = {
@@ -171,8 +434,8 @@ export function simulateTrade(
     quantity: cfg.quantity,
     contractId: '',
     accountId: 0,
-    currentSl: entry.initialSl,
-    initialSl: entry.initialSl,
+    currentSl: initialSl,
+    initialSl,
     tp1Price: entry.tp1,
     tp2Price: entry.tp2,
     tp3Price: entry.tp3,
@@ -181,6 +444,10 @@ export function simulateTrade(
     createdAt: new Date(bars[fillBarIndex].t),
     updatedAt: new Date(bars[fillBarIndex].t),
     dirty: false,
+    retryCount: 0,
+    maxRetries: cfg.maxRetries,
+    originalAlertId: alert.id,
+    retryEntryLevels: [],
   };
 
   const tpProgression: string[] = [];
@@ -202,7 +469,7 @@ export function simulateTrade(
       if (result.shouldClose) {
         // Position closed
         const exitPrice = position.currentSl; // Exit at SL level
-        const pnl = calculatePnl(side, fillPrice, exitPrice, cfg.quantity, cfg.symbol);
+        const pnl = calculatePnl(side, fillPrice, exitPrice, cfg.quantity, cfg.symbol || alert.symbol);
 
         return {
           alertId: alert.id,
@@ -221,6 +488,8 @@ export function simulateTrade(
           vpvrVah: vpvrResult.vah,
           vpvrVal: vpvrResult.val,
           entryFilled: true,
+          retryCount: 0,
+          originalAlertId: alert.id,
         };
       }
 
@@ -250,7 +519,7 @@ export function simulateTrade(
   // Position still open at end of bars — close at last bar close
   const lastBar = bars[bars.length - 1];
   const exitPrice = lastBar.c;
-  const pnl = calculatePnl(side, fillPrice, exitPrice, cfg.quantity, cfg.symbol);
+  const pnl = calculatePnl(side, fillPrice, exitPrice, cfg.quantity, cfg.symbol || alert.symbol);
 
   return {
     alertId: alert.id,
@@ -269,6 +538,8 @@ export function simulateTrade(
     vpvrVah: vpvrResult.vah,
     vpvrVal: vpvrResult.val,
     entryFilled: true,
+    retryCount: 0,
+    originalAlertId: alert.id,
   };
 }
 

@@ -117,6 +117,8 @@ const multiConfig: BotConfig = {
   symbols: ['MES', 'MNQ', 'MYM'],
   quantity: 1,
   maxContracts: 30,
+  maxRetries: 0,
+  slBufferTicks: 0,
 };
 
 describe('Multi-symbol alert routing (e2e)', () => {

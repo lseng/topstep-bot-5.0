@@ -51,6 +51,8 @@ const multiConfig: BacktestConfig = {
   quantity: 1,
   verbose: true,
   maxContracts: 0,
+  maxRetries: 0,
+  slBufferTicks: 0,
 };
 
 describe('Multi-symbol backtest (e2e)', () => {
@@ -133,6 +135,8 @@ describe('Multi-symbol backtest (e2e)', () => {
         vpvrVah: 5080,
         vpvrVal: 5020,
         entryFilled: true,
+        retryCount: 0,
+        originalAlertId: 'a1',
       },
       {
         alertId: 'a2',
@@ -151,6 +155,8 @@ describe('Multi-symbol backtest (e2e)', () => {
         vpvrVah: 5080,
         vpvrVal: 5020,
         entryFilled: true,
+        retryCount: 0,
+        originalAlertId: 'a2',
       },
     ];
 
@@ -170,6 +176,7 @@ describe('Multi-symbol backtest (e2e)', () => {
         exitReason: 'tp1', highestTpHit: 'tp1', tpProgression: ['tp1'],
         grossPnl: 150, netPnl: 150,
         vpvrPoc: 5050, vpvrVah: 5080, vpvrVal: 5020, entryFilled: true,
+        retryCount: 0, originalAlertId: 'a1',
       },
       {
         alertId: 'a2', symbol: 'MNQ', side: 'short',
@@ -177,6 +184,7 @@ describe('Multi-symbol backtest (e2e)', () => {
         exitReason: 'tp1', highestTpHit: 'tp1', tpProgression: ['tp1'],
         grossPnl: 60, netPnl: 60,
         vpvrPoc: 5050, vpvrVah: 5080, vpvrVal: 5020, entryFilled: true,
+        retryCount: 0, originalAlertId: 'a2',
       },
     ];
 

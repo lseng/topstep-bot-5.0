@@ -47,6 +47,8 @@ const config: BacktestConfig = {
   quantity: 1,
   verbose: true,
   maxContracts: 0,
+  maxRetries: 0,
+  slBufferTicks: 0,
 };
 
 describe('Backtest (e2e)', () => {
@@ -115,6 +117,8 @@ describe('Backtest (e2e)', () => {
         vpvrVah: 5080,
         vpvrVal: 5020,
         entryFilled: true,
+        retryCount: 0,
+        originalAlertId: 'a1',
       },
       {
         alertId: 'a2',
@@ -133,6 +137,8 @@ describe('Backtest (e2e)', () => {
         vpvrVah: 5080,
         vpvrVal: 5020,
         entryFilled: true,
+        retryCount: 0,
+        originalAlertId: 'a2',
       },
     ];
 
@@ -167,6 +173,8 @@ describe('Backtest (e2e)', () => {
         vpvrVah: 5080,
         vpvrVal: 5020,
         entryFilled: true,
+        retryCount: 0,
+        originalAlertId: 'a1',
       },
     ];
 

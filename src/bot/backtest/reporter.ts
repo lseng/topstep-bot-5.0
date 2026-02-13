@@ -19,7 +19,13 @@ export function formatBacktestReport(result: BacktestResult): string {
   // Config summary
   lines.push(`  Symbols:      ${result.config.symbols.join(', ')}`);
   lines.push(`  Period:       ${result.config.fromDate} to ${result.config.toDate}`);
-  lines.push(`  SL Method:    mirrored TP1 distance`);
+  const slMethod = result.config.slBufferTicks > 0
+    ? `${result.config.slBufferTicks}-tick buffer`
+    : 'mirrored TP1 distance';
+  lines.push(`  SL Method:    ${slMethod}`);
+  if (result.config.maxRetries > 0) {
+    lines.push(`  Max Retries:  ${result.config.maxRetries}`);
+  }
   lines.push(`  Quantity:     ${result.config.quantity} contracts`);
   lines.push('');
 

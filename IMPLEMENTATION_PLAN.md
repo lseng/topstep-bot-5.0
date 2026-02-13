@@ -117,14 +117,14 @@ Build a complete autonomous trading pipeline on top of the existing webhook→VP
 
 ### Phase 8: Dashboard Updates
 
-- [ ] **8.1** Create `dashboard/src/hooks/usePositions.ts` — React Query hook fetching from `/api/positions` with polling interval
-- [ ] **8.2** Create `dashboard/src/hooks/useTradeLog.ts` — React Query hook fetching from `/api/trades-log` with pagination
-- [ ] **8.3** Create `dashboard/src/hooks/useRealtimePositions.ts` — Supabase Realtime subscription for `positions` table changes (INSERT/UPDATE)
-- [ ] **8.4** Create `dashboard/src/components/PositionsTable.tsx` — Active positions table: symbol, side, state, entry price, current price, unrealized P&L (color-coded), TP/SL levels, time in trade. Live updates via Realtime.
-- [ ] **8.5** Create `dashboard/src/components/TradeLogTable.tsx` — Completed trades table: symbol, side, entry/exit price+time, P&L (color-coded), exit reason, highest TP hit, confirmation score. Sortable, paginated.
-- [ ] **8.6** Update `dashboard/src/components/AlertDetailPanel.tsx` — Add VPVR data section: POC, VAH, VAL, confirmation score, timeframe breakdown. Display when alert has associated VPVR data in `raw_payload`.
-- [ ] **8.7** Update `dashboard/src/components/KpiCards.tsx` — Add 2 new KPI cards: "Open Positions" (count from positions API), "Total P&L" (sum of net_pnl from trades_log). Keep existing 4 cards.
-- [ ] **8.8** Update `dashboard/src/App.tsx` — Add tab navigation (Alerts | Positions | Trade Log). Import and render PositionsTable and TradeLogTable in their respective tabs. Wire up useRealtimePositions.
+- [x] **8.1** Create `dashboard/src/hooks/usePositions.ts` — React Query hook fetching from `/api/positions` with polling interval
+- [x] **8.2** Create `dashboard/src/hooks/useTradeLog.ts` — React Query hook fetching from `/api/trades-log` with pagination
+- [x] **8.3** Create `dashboard/src/hooks/useRealtimePositions.ts` — Supabase Realtime subscription for `positions` table changes (INSERT/UPDATE)
+- [x] **8.4** Create `dashboard/src/components/PositionsTable.tsx` — Active positions table: symbol, side, state, entry price, current price, unrealized P&L (color-coded), TP/SL levels, time in trade. Live updates via Realtime.
+- [x] **8.5** Create `dashboard/src/components/TradeLogTable.tsx` — Completed trades table: symbol, side, entry/exit price+time, P&L (color-coded), exit reason, highest TP hit, confirmation score. Sortable, paginated.
+- [x] **8.6** Update `dashboard/src/components/AlertDetailPanel.tsx` — Add VPVR data section: POC, VAH, VAL, confirmation score, timeframe breakdown. Display when alert has associated VPVR data in `raw_payload`.
+- [x] **8.7** Update `dashboard/src/components/KpiCards.tsx` — Add 2 new KPI cards: "Open Positions" (count from positions API), "Total P&L" (sum of net_pnl from trades_log). Keep existing 4 cards.
+- [x] **8.8** Update `dashboard/src/App.tsx` — Add tab navigation (Alerts | Positions | Trade Log). Import and render PositionsTable and TradeLogTable in their respective tabs. Wire up useRealtimePositions.
 
 ### Phase 9: Testing
 

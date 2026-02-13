@@ -99,6 +99,8 @@ describe('PositionManager capacity tracking', () => {
     symbols: ['MES', 'MNQ', 'MYM', 'MGC'],
     quantity: 1,
     maxContracts: 3, // Only allow 3 micro-equivalent units
+    maxRetries: 0,
+    slBufferTicks: 0,
   };
 
   let pm: PositionManager;
@@ -233,6 +235,8 @@ describe('PositionManager capacity tracking', () => {
       symbols: ['ES', 'MES'],
       quantity: 1,
       maxContracts: 30, // 3 minis or 30 micros
+      maxRetries: 0,
+      slBufferTicks: 0,
     };
 
     const miniPm = new PositionManager(miniConfig);

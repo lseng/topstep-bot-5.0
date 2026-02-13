@@ -95,6 +95,8 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
   const batchResult = simulateBatch(alertsWithData, {
     quantity: config.quantity,
     maxContracts: config.maxContracts,
+    maxRetries: config.maxRetries,
+    slBufferTicks: config.slBufferTicks,
   });
 
   // Aggregate results with capacity stats

@@ -16,6 +16,10 @@ export interface BacktestConfig {
   verbose: boolean;
   /** Maximum contracts allowed across all symbols in micro-equivalent units (default: 30). 0 = unlimited. */
   maxContracts: number;
+  /** Maximum re-entry attempts per signal after SL hit (default: 0 = no retries) */
+  maxRetries: number;
+  /** Fixed stop-loss buffer in ticks (default: 0 = use mirrored TP1) */
+  slBufferTicks: number;
 }
 
 /** A single simulated trade from the backtest */
@@ -52,6 +56,10 @@ export interface SimulatedTrade {
   vpvrVal: number;
   /** Whether the entry price was reached (fill simulated) */
   entryFilled: boolean;
+  /** Retry attempt number (0 = original entry) */
+  retryCount: number;
+  /** Original alert ID that started this signal chain */
+  originalAlertId: string;
 }
 
 /** Aggregated backtest result */

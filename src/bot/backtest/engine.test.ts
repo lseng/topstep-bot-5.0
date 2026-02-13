@@ -61,6 +61,8 @@ const defaultConfig: BacktestConfig = {
   quantity: 1,
   verbose: false,
   maxContracts: 0,
+  maxRetries: 0,
+  slBufferTicks: 0,
 };
 
 function makeTrade(overrides?: Partial<SimulatedTrade>): SimulatedTrade {
@@ -81,6 +83,8 @@ function makeTrade(overrides?: Partial<SimulatedTrade>): SimulatedTrade {
     vpvrVah: 5080,
     vpvrVal: 5020,
     entryFilled: true,
+    retryCount: 0,
+    originalAlertId: 'alert-1',
     ...overrides,
   };
 }

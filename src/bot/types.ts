@@ -10,7 +10,8 @@ export type PositionState =
   | 'tp2_hit'
   | 'tp3_hit'
   | 'closed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'pending_retry';
 
 /** Position side matching DB position_side */
 export type PositionSide = 'long' | 'short';
@@ -73,6 +74,14 @@ export interface ManagedPosition {
   llmConfidence?: number;
   /** Whether this position has unsaved changes */
   dirty: boolean;
+  /** Current retry attempt number (0 = original entry) */
+  retryCount: number;
+  /** Maximum retry attempts allowed for this signal */
+  maxRetries: number;
+  /** Alert ID of the original signal (links retries back to the first alert) */
+  originalAlertId: string;
+  /** Pre-calculated stepped entry levels for retries */
+  retryEntryLevels: number[];
 }
 
 /** Bot configuration */
@@ -91,6 +100,10 @@ export interface BotConfig {
   quantity: number;
   /** Maximum contracts allowed across all symbols in micro-equivalent units (default: 30) */
   maxContracts: number;
+  /** Maximum re-entry attempts per signal after SL hit (default: 3) */
+  maxRetries: number;
+  /** Fixed stop-loss buffer in ticks (default: 8) */
+  slBufferTicks: number;
 }
 
 /** Result of a completed trade, used for logging */
@@ -133,6 +146,10 @@ export interface TradeResult {
   confirmationScore?: number;
   /** LLM reasoning text */
   llmReasoning?: string;
+  /** Retry attempt number (0 = original entry) */
+  retryCount: number;
+  /** Original alert ID that started this signal chain */
+  originalAlertId: string;
 }
 
 /** Tick data from SignalR quote events */

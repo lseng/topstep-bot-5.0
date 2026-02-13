@@ -42,7 +42,7 @@ export function evaluateTrailingStop(
   const { side, state, entryPrice } = position;
 
   // Only evaluate active positions (active, tp1_hit, tp2_hit, tp3_hit)
-  if (state === 'pending_entry' || state === 'closed' || state === 'cancelled') {
+  if (state === 'pending_entry' || state === 'closed' || state === 'cancelled' || state === 'pending_retry') {
     return { shouldClose: false };
   }
 

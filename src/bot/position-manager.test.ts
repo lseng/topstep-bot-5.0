@@ -47,6 +47,9 @@ const defaultConfig: PositionManagerConfig = {
   contractIds: new Map([['ES', 'CON.F.US.EPH26']]),
   symbols: ['ES'],
   quantity: 1,
+  maxContracts: 30,
+  maxRetries: 0,
+  slBufferTicks: 0,
 };
 
 describe('PositionManager', () => {

@@ -128,12 +128,12 @@ Build a complete autonomous trading pipeline on top of the existing webhook→VP
 
 ### Phase 9: Testing
 
-- [ ] **9.1** Create `tests/positions-api.test.ts` — Unit tests for GET /api/positions: pagination, filtering by state/symbol/side, sorting, invalid params
-- [ ] **9.2** Create `tests/trades-log-api.test.ts` — Unit tests for GET /api/trades-log: pagination, filtering by symbol/date range, sorting
-- [ ] **9.3** Create `tests/e2e/positions-api.e2e.test.ts` — E2E test: insert a position via Supabase, query via API, verify response structure
-- [ ] **9.4** Create `tests/e2e/trades-log.e2e.test.ts` — E2E test: insert a trade log via Supabase, query via API, verify P&L calculations
-- [ ] **9.5** Create `tests/e2e/bot-lifecycle.e2e.test.ts` — E2E test: full bot lifecycle in dry-run mode — alert → VPVR → entry calc → position created → simulated ticks → TP progression → close → trade logged. Uses real Supabase but mock TopstepX API.
-- [ ] **9.6** Create `tests/e2e/backtest.e2e.test.ts` — E2E test: run backtest against seeded alerts with mocked historical bars, verify result statistics
+- [x] **9.1** Create `tests/positions-api.test.ts` — Unit tests for GET /api/positions: pagination, filtering by state/symbol/side, sorting, invalid params
+- [x] **9.2** Create `tests/trades-log-api.test.ts` — Unit tests for GET /api/trades-log: pagination, filtering by symbol/date range, sorting
+- [x] **9.3** Create `tests/e2e/positions-api.e2e.test.ts` — E2E test: insert a position via Supabase, query via API, verify response structure
+- [x] **9.4** Create `tests/e2e/trades-log.e2e.test.ts` — E2E test: insert a trade log via Supabase, query via API, verify P&L calculations
+- [x] **9.5** Create `tests/e2e/bot-lifecycle.e2e.test.ts` — E2E test: full bot lifecycle in dry-run mode — alert → VPVR → entry calc → position created → simulated ticks → TP progression → close → trade logged. Uses real Supabase but mock TopstepX API.
+- [x] **9.6** Create `tests/e2e/backtest.e2e.test.ts` — E2E test: run backtest against seeded alerts with mocked historical bars, verify result statistics
 
 ### Phase 10: Validation + Polish
 

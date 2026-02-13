@@ -197,8 +197,9 @@ export async function searchContracts(
 }
 
 /**
- * Calculate the current front-month contract ID for quarterly futures.
- * Expiry months: Mar(H), Jun(M), Sep(U), Dec(Z)
+ * Calculate the current front-month contract ID.
+ * Quarterly futures (ES, NQ, MES, MNQ, MYM): Mar(H), Jun(M), Sep(U), Dec(Z)
+ * Monthly futures (MGC, MCL, MBT): every month
  * Rolls after day 19 of expiry month.
  */
 export function getCurrentContractId(symbol = 'ES'): string {
@@ -207,7 +208,13 @@ export function getCurrentContractId(symbol = 'ES'): string {
   const day = now.getDate();
   let year = now.getFullYear();
 
-  const expiryMonths = [3, 6, 9, 12];
+  const spec = CONTRACT_SPECS[symbol.toUpperCase()] ?? CONTRACT_SPECS['ES'];
+
+  const expiryMonths =
+    spec.expiryCycle === 'monthly'
+      ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      : [3, 6, 9, 12];
+
   let expiryMonth: number;
 
   const idx = expiryMonths.indexOf(month);
@@ -225,7 +232,6 @@ export function getCurrentContractId(symbol = 'ES'): string {
     }
   }
 
-  const spec = CONTRACT_SPECS[symbol.toUpperCase()] ?? CONTRACT_SPECS['ES'];
   const expiryCode = EXPIRY_CODES[expiryMonth];
   const yearCode = String(year).slice(-2);
 

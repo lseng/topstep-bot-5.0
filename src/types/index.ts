@@ -87,37 +87,34 @@ export type TradeAction = 'buy' | 'sell' | 'close' | 'close_long' | 'close_short
 export type OrderType = 'market' | 'limit' | 'stop' | 'stop_limit';
 
 /**
- * TopstepX API Order
+ * TopstepX API Order (matches actual ProjectX API)
+ * Side: 0=SELL, 1=BUY
+ * Type: 1=LIMIT, 2=MARKET, 3=STOP (unsupported), 4=STOP_LIMIT
  */
 export interface TopstepXOrder {
-  accountId: string;
-  symbol: string;
-  side: 'Buy' | 'Sell';
-  quantity: number;
-  orderType: 'Market' | 'Limit' | 'Stop' | 'StopLimit';
-  price?: number;
+  accountId: number;
+  contractId: string;
+  type: number;
+  side: number;
+  size: number;
+  limitPrice?: number;
   stopPrice?: number;
-  timeInForce: 'Day' | 'GTC' | 'IOC' | 'FOK';
+  customTag?: string;
 }
 
 /**
  * TopstepX Order Response
  */
 export interface TopstepXOrderResponse {
-  orderId: string;
-  accountId: string;
-  symbol: string;
-  side: 'Buy' | 'Sell';
-  quantity: number;
-  filledQuantity: number;
-  status: OrderStatus;
-  filledPrice?: number;
-  createdAt: string;
-  updatedAt: string;
+  success: boolean;
+  orderId: number;
+  errorCode: number;
+  errorMessage: string | null;
 }
 
 /**
- * Order status from TopstepX
+ * Order status codes from TopstepX
+ * 0=PENDING, 1=OPEN, 2=FILLED, 3=CANCELLED, 4=REJECTED, 5=EXPIRED
  */
 export type OrderStatus =
   | 'Pending'
@@ -129,35 +126,41 @@ export type OrderStatus =
 
 /**
  * TopstepX Position
+ * size > 0 = long, size < 0 = short
  */
 export interface TopstepXPosition {
-  symbol: string;
-  quantity: number;
-  side: 'Long' | 'Short';
-  entryPrice: number;
-  currentPrice: number;
-  unrealizedPnL: number;
-  accountId: string;
+  accountId: number;
+  contractId: string;
+  size: number;
+  averagePrice: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
 }
 
 /**
  * TopstepX Account
  */
 export interface TopstepXAccount {
-  accountId: string;
-  accountName: string;
+  id: number;
+  name: string;
   balance: number;
+  canTrade: boolean;
   buyingPower: number;
-  unrealizedPnL: number;
-  realizedPnL: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
+  maxLossLimit: number;
+  dailyLossLimit: number;
+  startingBalance: number;
 }
 
 /**
  * TopstepX Authentication Response
  */
 export interface TopstepXAuthResponse {
+  success: boolean;
   token: string;
-  expiresAt: string;
+  errorCode: number;
+  errorMessage: string | null;
 }
 
 /**
@@ -176,6 +179,12 @@ export interface WebhookResponse {
     status: OrderStatus;
     filledPrice?: number;
     timestamp: string;
+    confirmation?: {
+      confirmed: boolean;
+      score: number;
+      level: string;
+      summary: string;
+    };
   };
   details?: string | ValidationError[];
 }

@@ -18,6 +18,12 @@ vi.mock('../src/services/alert-storage', () => ({
   saveAlert: (...args: unknown[]) => mockSaveAlert(...args),
 }));
 
+// Mock the confirmation engine
+const mockConfirmAlert = vi.fn();
+vi.mock('../src/services/confirmation', () => ({
+  confirmAlert: (...args: unknown[]) => mockConfirmAlert(...args),
+}));
+
 describe('webhook handler', () => {
   let mockReq: Partial<VercelRequest>;
   let mockRes: Partial<VercelResponse>;
@@ -28,6 +34,16 @@ describe('webhook handler', () => {
     process.env.WEBHOOK_SECRET = 'test-secret-123';
 
     mockSaveAlert.mockResolvedValue('test-alert-id');
+    mockConfirmAlert.mockResolvedValue({
+      confirmed: true,
+      score: 85,
+      level: 'strong',
+      summary: 'BUY @ 100 → score 85/100 (strong)',
+      action: 'buy',
+      price: 100,
+      timestamp: '2026-02-12T10:00:00.000Z',
+      timeframes: [],
+    });
 
     mockReq = {
       method: 'POST',
@@ -623,6 +639,104 @@ describe('webhook handler', () => {
       expect(statusCode).toBe(200);
       const response = responseData as { data: { quantity: number } };
       expect(response.data.quantity).toBe(10);
+    });
+  });
+
+  describe('VPVR confirmation', () => {
+    it('calls confirmAlert for buy signals with OHLCV close price', async () => {
+      mockReq.body = {
+        secret: 'test-secret-123',
+        symbol: 'ES',
+        action: 'buy',
+        quantity: 1,
+        close: 6850.50,
+      };
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      expect(mockConfirmAlert).toHaveBeenCalledWith('ES', 'buy', 6850.50);
+    });
+
+    it('calls confirmAlert for sell signals', async () => {
+      mockReq.body = {
+        secret: 'test-secret-123',
+        symbol: 'NQ',
+        action: 'sell',
+        quantity: 1,
+        close: 17500,
+      };
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      expect(mockConfirmAlert).toHaveBeenCalledWith('NQ', 'sell', 17500);
+    });
+
+    it('does not call confirmAlert for close actions', async () => {
+      mockReq.body = {
+        secret: 'test-secret-123',
+        symbol: 'ES',
+        action: 'close',
+        quantity: 1,
+      };
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      expect(mockConfirmAlert).not.toHaveBeenCalled();
+    });
+
+    it('does not call confirmAlert when no price available', async () => {
+      mockReq.body = {
+        secret: 'test-secret-123',
+        symbol: 'ES',
+        action: 'buy',
+        quantity: 1,
+      };
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      expect(mockConfirmAlert).not.toHaveBeenCalled();
+    });
+
+    it('includes confirmation in response when available', async () => {
+      mockReq.body = {
+        secret: 'test-secret-123',
+        symbol: 'ES',
+        action: 'buy',
+        quantity: 1,
+        close: 6850,
+      };
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      const response = responseData as {
+        data: {
+          confirmation?: { confirmed: boolean; score: number; level: string; summary: string };
+        };
+      };
+      expect(response.data.confirmation).toBeDefined();
+      expect(response.data.confirmation?.confirmed).toBe(true);
+      expect(response.data.confirmation?.score).toBe(85);
+      expect(response.data.confirmation?.level).toBe('strong');
+    });
+
+    it('succeeds even when confirmation fails', async () => {
+      mockConfirmAlert.mockRejectedValue(new Error('API timeout'));
+      mockReq.body = {
+        secret: 'test-secret-123',
+        symbol: 'ES',
+        action: 'buy',
+        quantity: 1,
+        close: 6850,
+      };
+      await handler(mockReq as VercelRequest, mockRes as VercelResponse);
+
+      expect(statusCode).toBe(200);
+      const response = responseData as {
+        success: boolean;
+        data: { confirmation?: unknown };
+      };
+      expect(response.success).toBe(true);
+      expect(response.data.confirmation).toBeUndefined();
     });
   });
 

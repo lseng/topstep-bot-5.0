@@ -1,0 +1,322 @@
+// TopstepX API types, enums, and constants
+// Matches the actual ProjectX/TopstepX REST API contract
+
+// ─── Order Enums (numeric values used by the API) ────────────────────────────
+
+export enum OrderSide {
+  SELL = 0,
+  BUY = 1,
+}
+
+export enum OrderTypeNum {
+  LIMIT = 1,
+  MARKET = 2,
+  STOP = 3, // NOT supported by TopstepX — use STOP_LIMIT
+  STOP_LIMIT = 4,
+}
+
+export enum OrderStatusNum {
+  PENDING = 0,
+  OPEN = 1,
+  FILLED = 2,
+  CANCELLED = 3,
+  REJECTED = 4,
+  EXPIRED = 5,
+}
+
+// ─── API Response Wrapper ────────────────────────────────────────────────────
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  errorCode: number;
+  errorMessage: string | null;
+  /** The payload key varies by endpoint — callers destructure the specific field */
+  [key: string]: T | boolean | number | string | null | undefined;
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+export interface AuthResponse {
+  success: boolean;
+  token: string;
+  errorCode: number;
+  errorMessage: string | null;
+}
+
+// ─── Account ─────────────────────────────────────────────────────────────────
+
+export interface Account {
+  id: number;
+  name: string;
+  balance: number;
+  canTrade: boolean;
+  isVisible: boolean;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  openPnl: number;
+  maxLossLimit: number;
+  dailyLossLimit: number;
+  trailingDrawdown: number;
+  startingBalance: number;
+  totalPnl: number;
+  marginUsed: number;
+  buyingPower: number;
+}
+
+export interface AccountSearchResponse extends ApiResponse {
+  accounts: Account[];
+}
+
+export interface AccountSummaryResponse extends ApiResponse {
+  account: Account;
+}
+
+// ─── Contract ────────────────────────────────────────────────────────────────
+
+export interface Contract {
+  id: string;
+  name: string;
+  symbol: string;
+  description: string;
+  tickSize: number;
+  tickValue: number;
+}
+
+export interface ContractSearchResponse extends ApiResponse {
+  contracts: Contract[];
+}
+
+// ─── Order ───────────────────────────────────────────────────────────────────
+
+export interface PlaceOrderParams {
+  accountId: number;
+  contractId: string;
+  type: OrderTypeNum;
+  side: OrderSide;
+  size: number;
+  limitPrice?: number;
+  stopPrice?: number;
+  customTag?: string;
+}
+
+export interface PlaceOrderResponse extends ApiResponse {
+  orderId: number;
+}
+
+export interface CancelOrderParams {
+  orderId: number;
+  accountId?: number;
+}
+
+export interface Order {
+  id: number;
+  accountId: number;
+  contractId: string;
+  type: OrderTypeNum;
+  side: OrderSide;
+  size: number;
+  limitPrice: number | null;
+  stopPrice: number | null;
+  status: OrderStatusNum;
+  fillPrice: number | null;
+  filledSize: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderSearchResponse extends ApiResponse {
+  orders: Order[];
+}
+
+// ─── Position ────────────────────────────────────────────────────────────────
+
+export interface Position {
+  accountId: number;
+  contractId: string;
+  size: number; // Positive = long, negative = short
+  averagePrice: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
+}
+
+export interface PositionListResponse extends ApiResponse {
+  positions: Position[];
+}
+
+// ─── Trade (Fill) ────────────────────────────────────────────────────────────
+
+export interface Trade {
+  id: number;
+  accountId: number;
+  contractId: string;
+  creationTimestamp: string;
+  price: number;
+  profitAndLoss: number;
+  fees: number;
+  side: number; // 0=SELL, 1=BUY
+  size: number;
+  voided: boolean;
+  orderId: number;
+}
+
+export interface TradeSearchResponse extends ApiResponse {
+  trades: Trade[];
+}
+
+// ─── Historical Bars ─────────────────────────────────────────────────────────
+
+export enum BarUnit {
+  SECOND = 1,
+  MINUTE = 2,
+  DAY = 3,
+}
+
+export interface RetrieveBarsParams {
+  contractId: string;
+  live: boolean;
+  startTime: string; // ISO 8601
+  endTime: string; // ISO 8601
+  unit: BarUnit;
+  unitNumber: number;
+  limit?: number;
+}
+
+export interface Bar {
+  t: string; // timestamp
+  o: number; // open
+  h: number; // high
+  l: number; // low
+  c: number; // close
+  v: number; // volume
+  tickCount?: number;
+}
+
+export interface BarsResponse extends ApiResponse {
+  bars: Bar[];
+}
+
+// ─── SignalR Event Data ──────────────────────────────────────────────────────
+
+export interface GatewayOrderEvent {
+  orderId: number;
+  id: number;
+  status: number;
+  fillPrice: number | null;
+  averageFillPrice: number | null;
+  filledSize: number;
+  size: number;
+}
+
+export interface GatewayPositionEvent {
+  accountId: number;
+  contractId: string;
+  size: number;
+  averagePrice: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
+}
+
+export interface GatewayAccountEvent {
+  id: number;
+  balance: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+}
+
+export interface GatewayTradeEvent {
+  orderId: number;
+  id: number;
+  status: number;
+  fillPrice: number | null;
+  averageFillPrice: number | null;
+  filledSize: number;
+  size: number;
+}
+
+export interface GatewayQuoteEvent {
+  contractId: string;
+  bid: number;
+  ask: number;
+  last: number;
+  volume: number;
+  timestamp: string;
+}
+
+export interface GatewayMarketTradeEvent {
+  contractId: string;
+  price: number;
+  size: number;
+  timestamp: string;
+}
+
+export interface GatewayDepthEvent {
+  contractId: string;
+  [key: string]: unknown;
+}
+
+// ─── Contract Specifications ─────────────────────────────────────────────────
+
+export interface ContractSpec {
+  name: string;
+  tickSize: number;
+  tickValue: number;
+  pointValue: number;
+  contractIdPrefix: string;
+  marginDay: number;
+  marginOvernight: number;
+}
+
+export const CONTRACT_SPECS: Record<string, ContractSpec> = {
+  ES: {
+    name: 'E-mini S&P 500',
+    tickSize: 0.25,
+    tickValue: 12.5,
+    pointValue: 50.0,
+    contractIdPrefix: 'CON.F.US.EP',
+    marginDay: 500,
+    marginOvernight: 12000,
+  },
+  NQ: {
+    name: 'E-mini Nasdaq 100',
+    tickSize: 0.25,
+    tickValue: 5.0,
+    pointValue: 20.0,
+    contractIdPrefix: 'CON.F.US.ENQ',
+    marginDay: 500,
+    marginOvernight: 16000,
+  },
+  MES: {
+    name: 'Micro E-mini S&P 500',
+    tickSize: 0.25,
+    tickValue: 1.25,
+    pointValue: 5.0,
+    contractIdPrefix: 'CON.F.US.MES',
+    marginDay: 50,
+    marginOvernight: 1200,
+  },
+  MNQ: {
+    name: 'Micro E-mini Nasdaq 100',
+    tickSize: 0.25,
+    tickValue: 0.5,
+    pointValue: 2.0,
+    contractIdPrefix: 'CON.F.US.MNQ',
+    marginDay: 50,
+    marginOvernight: 1600,
+  },
+};
+
+/** Futures month codes: month number → letter */
+export const EXPIRY_CODES: Record<number, string> = {
+  1: 'F',
+  2: 'G',
+  3: 'H',
+  4: 'J',
+  5: 'K',
+  6: 'M',
+  7: 'N',
+  8: 'Q',
+  9: 'U',
+  10: 'V',
+  11: 'X',
+  12: 'Z',
+};

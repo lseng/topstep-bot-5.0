@@ -4,6 +4,8 @@ import { validateWebhookSecret, validateTradingViewPayload } from '../src/lib/va
 import { parseWebhookPayload } from '../src/lib/tradingview-parser';
 import { saveAlert } from '../src/services/alert-storage';
 import type { WebhookResponse, ParsedWebhookPayload } from '../src/types';
+import { confirmAlert } from '../src/services/confirmation';
+import type { ConfirmationResult } from '../src/services/confirmation';
 
 /**
  * Determines if the request body needs text parsing based on Content-Type
@@ -133,6 +135,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
+  // VPVR Confirmation (non-blocking — failures don't block the alert)
+  let confirmation: ConfirmationResult | null = null;
+  if (payload.action === 'buy' || payload.action === 'sell') {
+    const confirmPrice = payload.ohlcv?.close ?? payload.price ?? 0;
+    if (confirmPrice > 0) {
+      try {
+        confirmation = await confirmAlert(payload.symbol, payload.action, confirmPrice);
+        logger.info('VPVR confirmation result', {
+          symbol: payload.symbol,
+          action: payload.action,
+          confirmed: confirmation.confirmed,
+          score: confirmation.score,
+          level: confirmation.level,
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown confirmation error';
+        logger.warn('VPVR confirmation failed (proceeding without)', { error: errorMessage });
+      }
+    }
+  }
+
   // Build response data with OHLCV information
   const responseData: WebhookResponse['data'] = {
     alertId,
@@ -142,6 +165,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     quantity: payload.quantity,
     status: 'Pending',
     timestamp: new Date().toISOString(),
+    confirmation: confirmation
+      ? {
+          confirmed: confirmation.confirmed,
+          score: confirmation.score,
+          level: confirmation.level,
+          summary: confirmation.summary,
+        }
+      : undefined,
   };
 
   // Build success response

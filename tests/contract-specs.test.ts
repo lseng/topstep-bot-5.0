@@ -64,7 +64,7 @@ describe('CONTRACT_SPECS', () => {
       name: 'Micro Crude Oil',
       tickSize: 0.01,
       tickValue: 1.0,
-      contractIdPrefix: 'CON.F.US.MCL',
+      contractIdPrefix: 'CON.F.US.MCLE',
       expiryCycle: 'monthly',
     });
 
@@ -72,7 +72,7 @@ describe('CONTRACT_SPECS', () => {
       name: 'Micro Bitcoin',
       tickSize: 5.0,
       tickValue: 0.5,
-      contractIdPrefix: 'CON.F.CME.MBT',
+      contractIdPrefix: 'CON.F.US.MBT',
       expiryCycle: 'monthly',
     });
   });
@@ -160,13 +160,13 @@ describe('getCurrentContractId', () => {
     it('MCL rolls to next month after day 19', () => {
       mockDate(2026, 2, 20); // Feb 20 → rolled, next = Mar
       const id = getCurrentContractId('MCL');
-      expect(id).toBe('CON.F.US.MCL.H26'); // H = Mar
+      expect(id).toBe('CON.F.US.MCLE.H26'); // H = Mar
     });
 
     it('MBT uses correct prefix (CME)', () => {
       mockDate(2026, 5, 10); // May 10 → current month May
       const id = getCurrentContractId('MBT');
-      expect(id).toBe('CON.F.CME.MBT.K26'); // K = May
+      expect(id).toBe('CON.F.US.MBT.K26'); // K = May
     });
 
     it('monthly rolls to Jan of next year from Dec after rollover', () => {

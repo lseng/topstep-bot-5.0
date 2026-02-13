@@ -1,185 +1,190 @@
 # Implementation Plan
 
 **Last Updated:** 2026-02-12
-**Status:** COMPLETE
-**Branch:** bug-issue-8-adw-7c39c8e8-dashboard-realtime-refresh
-**Spec:** specs/dashboard-does-not-display-real-time-data-without-.md (GitHub Issue #8)
+**Status:** PLANNING
+**Spec:** `specs/autonomous-trading-pipeline-vpvr-based-entry-trail.md` (GitHub Issue #10)
 
 ## Summary
 
-Fix the dashboard so it displays real-time data without requiring a manual page refresh. Four root causes are identified in the spec: (1) `invalidateQueries` doesn't trigger refetch, (2) relative timestamps freeze after render, (3) no polling fallback when Realtime drops, and (4) KPI success rate calculation is wrong. All four must be fixed.
+Build a complete autonomous trading pipeline on top of the existing webhook→VPVR confirmation system. The bot uses VPVR analysis to find optimal entry prices (limit orders at VAL/VAH), manages positions with progressive trailing stops (TP1→BE, TP2→TP1, TP3→TP2), supports backtesting against historical alerts, runs as a local CLI process with SignalR streaming, and logs trade reasoning via LLM. Includes new database tables (`positions`, `trades_log`), API endpoints, and dashboard views.
 
 ## Specifications Analyzed
-
-- [x] `specs/dashboard-does-not-display-real-time-data-without-.md` — Dashboard real-time refresh bug (Issue #8)
+- [x] `specs/autonomous-trading-pipeline-vpvr-based-entry-trail.md` — **Primary spec for this plan**
 
 ## Database Analysis
 
 ### Existing Tables
+| Table | Migration | Status |
+|-------|-----------|--------|
+| `alerts` | `20260212000000_create_alerts_table.sql` | Complete — enums `trade_action`, `order_type`, `alert_status`; RLS enabled |
+| (realtime) | `20260212100000_enable_realtime_and_anon_read.sql` | Complete — alerts in Realtime publication, anon read policy |
 
-| Table | Migration |
-|-------|-----------|
-| `alerts` | `20260212000000_create_alerts_table.sql` — full schema with enums, indexes, RLS |
-
-### Realtime Configuration
-
-| Feature | Migration |
-|---------|-----------|
-| Realtime publication | `20260212100000_enable_realtime_and_anon_read.sql` — `ALTER PUBLICATION supabase_realtime ADD TABLE alerts` |
-| Anon read policy | Same migration — `CREATE POLICY "Anon can read alerts"` |
+### Existing Types (`src/types/database.ts`)
+- `TradeAction`, `OrderType`, `AlertStatus` enums
+- `AlertRow`, `AlertInsert`, `AlertUpdate` interfaces
 
 ### Schema Changes Required
-
-None. The database schema is correct. Realtime is already enabled for the `alerts` table and anon read access is granted. All issues are frontend-only.
+1. **New enum `position_state`**: `pending_entry`, `active`, `tp1_hit`, `tp2_hit`, `tp3_hit`, `closed`, `cancelled`
+2. **New enum `position_side`**: `long`, `short`
+3. **New table `positions`**: 22 columns — tracks live position state, VPVR levels, TP/SL prices, P&L, LLM data
+4. **New table `trades_log`**: 18 columns — immutable record of completed trades with full entry/exit data
+5. **Realtime**: Add `positions` to Supabase Realtime publication, anon read policy
+6. **Indexes**: positions(symbol, state), positions(alert_id), trades_log(position_id), trades_log(symbol, created_at)
 
 ## Gap Analysis
 
-### Root Cause 1: Realtime invalidation doesn't trigger refetch
+### What Exists (reuse, don't duplicate)
+| Component | Location | Notes |
+|-----------|----------|-------|
+| VPVR Calculator | `src/services/vpvr/calculator.ts` | Pure function, `calculateVpvr(bars)` → `VpvrResult` with POC/VAH/VAL |
+| Confirmation Engine | `src/services/confirmation/engine.ts` | `confirmAlert()` fetches bars, runs dual-timeframe VPVR, scores |
+| TopstepX REST Client | `src/services/topstepx/client.ts` | `placeOrder()`, `cancelOrder()`, `closePosition()`, `getPositions()`, `getHistoricalBars()` |
+| TopstepX Streaming | `src/services/topstepx/streaming.ts` | `UserHubConnection` (orders/positions), `MarketHubConnection` (quotes/trades) |
+| TopstepX Types | `src/services/topstepx/types.ts` | `PlaceOrderParams`, `OrderSide`, `OrderTypeNum`, `GatewayQuoteEvent`, `CONTRACT_SPECS`, etc. |
+| Alert Storage | `src/services/alert-storage/alert-storage.ts` | Saves alerts to Supabase |
+| Supabase Client | `src/lib/supabase.ts` | Initialized with service role key |
+| Logger | `src/lib/logger.ts` | Structured JSON logging with redaction |
+| Contract Resolver | `src/services/topstepx/client.ts:getCurrentContractId()` | Quarterly futures contract ID |
 
-**File:** `dashboard/src/hooks/useRealtimeAlerts.ts`
-
-- **Current:** Lines 16, 23 call `queryClient.invalidateQueries({ queryKey: ['alerts'] })` which marks queries stale but does NOT refetch when the component is not actively observing (React Query default behavior with `staleTime`/background refetch settings).
-- **Spec fix:** Switch to `queryClient.refetchQueries()` to force an immediate network refetch.
-- **Gap:** `invalidateQueries` → `refetchQueries` for both INSERT and UPDATE handlers.
-
-### Root Cause 2: Relative timestamps freeze after render
-
-**Files:** `dashboard/src/components/AlertsTable.tsx` (line 43-53), `dashboard/src/components/KpiCards.tsx` (line 11-22)
-
-- **Current:** `formatRelativeTime()` computes time diff once at render. No interval triggers re-render, so "5s ago" stays frozen.
-- **Spec fix:** Add a `useEffect` interval (~1s) with a tick counter state to force periodic re-renders.
-- **Gap:** Both `AlertsTable` and `KpiCards` need a tick mechanism. Best approach: create a shared `useTick` hook that both components can use, or add the tick at the `App.tsx` level and pass it down (simplest: add it in `App.tsx` since both components are rendered there).
-
-### Root Cause 3: No polling fallback
-
-**Files:** `dashboard/src/hooks/useAlerts.ts`, `dashboard/src/hooks/useAlertDetail.ts`
-
-- **Current (`useAlerts.ts`):** `useQuery` has no `refetchInterval`. If Realtime WebSocket drops, UI is permanently stale.
-- **Current (`useAlertDetail.ts`):** Same — no `refetchInterval`, and `enabled: !!id`.
-- **Spec fix:** Add `refetchInterval: 5000` to both hooks as a safety net.
-- **Gap:** Missing `refetchInterval` option in both `useQuery` calls.
-
-### Root Cause 4: KPI success rate calculation bug
-
-**File:** `dashboard/src/App.tsx` (line 58-65)
-
-- **Current:** `successRate = (executed / alerts.length) * 100` where `executed` is filtered from current page data and denominator is `alerts.length` (page size, e.g. 25). This is wrong because:
-  - `executed` count is from the current page only, not total
-  - Denominator should be `pagination.total`, not page size
-- **Spec fix:** Use `pagination.total` as denominator. For the numerator, ideally fetch aggregate stats. However, the simplest fix within the current architecture is to compute the rate from the current page data consistently: `executed / alerts.length` (both from page) — but the spec specifically says to use `pagination.total`. Best approach: acknowledge the limitation and use `pagination.total` as denominator, noting that `executed` count is page-scoped.
-- **Practical fix:** The most correct lightweight fix is: compute `failedCount` and `executed` from page data (which is all we have client-side), and use `alerts.length` consistently as denominator for rate calculations within the current page. OR better: refactor to use `pagination.total` and accept that the rate is an approximation. The spec says: "Use `pagination.total` as the denominator, or fetch aggregate stats from the API." We'll implement the `pagination.total` approach.
+### What's Missing (everything below must be built)
+- **Entire `src/bot/` directory** — zero files exist
+- **Database migrations** for `positions` and `trades_log`
+- **Database types** for new tables
+- **API endpoints**: `/api/positions`, `/api/trades-log`
+- **Dashboard components**: PositionsTable, TradeLogTable, VPVR panel on alert detail
+- **Dashboard hooks**: usePositions, useTradeLog, useRealtimePositions
+- **KPI cards**: P&L and position count metrics
+- **npm scripts**: `bot`, `backtest`
+- **Backtest engine** with simulator and reporter
 
 ## Prioritized Tasks
 
-### Phase 1: Core Realtime Fix (Root Cause 1)
+### Phase 1: Types + Database Schema (Foundation)
 
-- [x] **Task 1.1** — Switch `invalidateQueries` to `refetchQueries` in `dashboard/src/hooks/useRealtimeAlerts.ts`
-  - Line 16: Change `queryClient.invalidateQueries({ queryKey: ['alerts'] })` → `queryClient.refetchQueries({ queryKey: ['alerts'] })`
-  - Line 23: Same change for UPDATE handler
-  - Line 24-26: Change `queryClient.invalidateQueries({ queryKey: ['alert', ...] })` → `queryClient.refetchQueries({ queryKey: ['alert', ...] })`
-  - **Complexity:** Low (3 line changes)
+- [x] **1.1** Create `src/bot/types.ts` — Define `PositionState` (enum matching DB), `PositionSide`, `ManagedPosition` (in-memory position with VPVR levels, TP/SL prices, dirty flag), `BotConfig` (account ID, contract ID, dry-run flag, SL buffer, write interval), `TradeResult` (for logging completed trades), `TickData` (price + timestamp from SignalR quote events)
+- [x] **1.2** Create `src/bot/backtest/types.ts` — Define `BacktestConfig` (date range, symbol, simulation params), `SimulatedTrade` (entry/exit/TP progression/P&L), `BacktestResult` (win rate, avg P&L, profit factor, Sharpe ratio, max drawdown, per-trade breakdown)
+- [x] **1.3** Create migration `supabase/migrations/20260213000000_create_positions_table.sql` — Enum types `position_state` + `position_side`, `positions` table (22 columns per spec), indexes on `(symbol, state)`, `(alert_id)`, RLS + service role full access policy, table comment
+- [x] **1.4** Create migration `supabase/migrations/20260213000001_create_trades_log_table.sql` — `trades_log` table (18 columns per spec), indexes on `(position_id)`, `(symbol, created_at DESC)`, RLS + service role full access policy, table comment
+- [x] **1.5** Create migration `supabase/migrations/20260213000002_enable_realtime_positions.sql` — Add `positions` to Realtime publication, anon read policy for both `positions` and `trades_log`
+- [x] **1.6** Update `src/types/database.ts` — Add `PositionState`, `PositionSide` type unions, `PositionRow`/`PositionInsert`/`PositionUpdate` interfaces, `TradesLogRow`/`TradesLogInsert` interfaces matching the migration schemas; update `Database` interface with new tables
+- [x] **1.7** Create `src/bot/index.ts` — Barrel export for all bot modules
 
-### Phase 2: Polling Fallback (Root Cause 3)
+### Phase 2: Pure Business Logic (no I/O, full test coverage)
 
-- [x] **Task 2.1** — Add `refetchInterval: 5000` to `useAlerts` hook in `dashboard/src/hooks/useAlerts.ts`
-  - Add `refetchInterval: 5000` to the `useQuery` options object at line 47-60
-  - **Complexity:** Low (1 line addition)
+- [x] **2.1** Create `src/bot/entry-calculator.ts` — Pure function `calculateEntryPrice(action: TradeAction, vpvr: VpvrResult, config?: { slBufferTicks?: number }): { entryPrice: number; initialSl: number; tp1: number; tp2: number; tp3: number }`. BUY: entry=VAL, SL=below VAL, TP1=POC, TP2=VAH, TP3=rangeHigh. SELL: entry=VAH, SL=above VAH, TP1=POC, TP2=VAL, TP3=rangeLow. Uses `CONTRACT_SPECS` tick sizes for SL buffer.
+- [x] **2.2** Create `src/bot/entry-calculator.test.ts` — ~15 tests: BUY entry at VAL with correct TP/SL levels, SELL entry at VAH with correct levels, SL buffer tick calculation, edge cases (flat range, narrow value area), close actions return null
+- [x] **2.3** Create `src/bot/trailing-stop.ts` — Pure function `evaluateTrailingStop(position: ManagedPosition, currentPrice: number): { newState?: PositionState; newSl?: number; shouldClose?: boolean; closeReason?: string }`. Implements TP progression: TP1→SL=entry, TP2→SL=TP1, TP3→SL=TP2. Checks SL breach (long: price <= currentSl, short: price >= currentSl). Returns state transitions and new SL values.
+- [x] **2.4** Create `src/bot/trailing-stop.test.ts` — ~15 tests: Long position TP1 hit moves SL to entry, TP2 hit moves SL to TP1, TP3 hit moves SL to TP2, SL breach from each state triggers close, short position mirror logic, no state change when price is between levels, opposing alert causes close
+- [x] **2.5** Create `src/bot/backtest/simulator.ts` — Pure function `simulateTrade(alert: AlertRow, bars: Bar[], vpvrResult: VpvrResult): SimulatedTrade | null`. Takes stored alert + historical bars, simulates entry at VPVR level, walks forward through bars checking TP/SL progression using `evaluateTrailingStop()`, returns full trade lifecycle. No I/O.
+- [x] **2.6** Create `src/bot/backtest/simulator.test.ts` — ~10 tests: Simulates long entry fill at VAL, short entry fill at VAH, TP1/TP2/TP3 progression, SL hit scenarios, entry never fills (cancelled), P&L calculation accuracy
 
-- [x] **Task 2.2** — Add `refetchInterval: 5000` to `useAlertDetail` hook in `dashboard/src/hooks/useAlertDetail.ts`
-  - Add `refetchInterval: 5000` to the `useQuery` options object at line 32-40
-  - Only poll when `enabled: !!id` (already gated)
-  - **Complexity:** Low (1 line addition)
+### Phase 3: Position Manager (State Machine)
 
-### Phase 3: Live Timestamps (Root Cause 2)
+- [x] **3.1** Create `src/bot/position-manager.ts` — `PositionManager` class: manages Map of active `ManagedPosition` objects keyed by symbol. Methods: `onAlert(alert)` → creates pending_entry or cancels existing; `onOrderFill(orderId, fillPrice)` → transitions to active; `onTick(symbol, price, timestamp)` → evaluates trailing stop, emits close commands; `onClose(symbol, exitPrice, reason)` → transitions to closed. Emits typed events: `placeOrder`, `cancelOrder`, `closePosition`, `stateChange`, `positionClosed`. Uses `entry-calculator.ts` and `trailing-stop.ts` internally.
+- [x] **3.2** Create `src/bot/position-manager.test.ts` — ~30 tests: Full state machine coverage — alert creates pending_entry, fill transitions to active, TP1/TP2/TP3 progression on tick, SL breach closes, opposing alert cancels pending or closes active, duplicate alert on same symbol replaces, close alert closes active position, error states (fill for unknown order, tick for unknown symbol), event emission verification
 
-- [x] **Task 3.1** — Create a `useTick` hook in `dashboard/src/hooks/useTick.ts`
-  - Returns a tick counter that increments every 1000ms
-  - Uses `useState` + `useEffect` with `setInterval`
-  - Components that depend on the tick will re-render automatically
-  - **Complexity:** Low (new file, ~15 lines)
+### Phase 4: I/O Services (mocked tests)
 
-- [x] **Task 3.2** — Wire `useTick` into `AlertsTable.tsx` to keep relative timestamps live
-  - Import and call `useTick()` inside `AlertsTable` component (line 182)
-  - The tick value doesn't need to be passed to `formatRelativeTime` — just calling `useTick()` in the component triggers re-renders every second, which re-evaluates `formatRelativeTime` in the cell renderers
-  - **Complexity:** Low (2 line addition)
+- [x] **4.1** Create `src/bot/trade-executor.ts` — `TradeExecutor` class: wraps TopstepX client. Methods: `placeLimitEntry(symbol, side, price, quantity, accountId)` → calls `placeOrder()` with `OrderTypeNum.LIMIT`; `cancelEntry(orderId, accountId)` → calls `cancelOrder()`; `marketClose(symbol, side, quantity, accountId)` → calls `closePosition()`. Handles contract resolution via `getCurrentContractId()`. Dry-run mode logs but doesn't call API.
+- [x] **4.2** Create `src/bot/trade-executor.test.ts` — ~10 tests: Limit order placement with correct params, cancel order, market close, dry-run mode skips API calls, error handling for failed orders
+- [x] **4.3** Create `src/bot/supabase-writer.ts` — `SupabaseWriteQueue` class: 5-second interval flush timer, dirty flag per position. Methods: `markDirty(positionId, data)` → buffers update; `flush()` → batch upserts all dirty positions to Supabase, inserts completed trades to `trades_log`; `writeTradeLog(trade)` → immediate insert for completed trades; `start()`/`stop()` → manage interval timer. Only writes on state changes, not every tick.
+- [x] **4.4** Create `src/bot/supabase-writer.test.ts` — ~10 tests: Dirty flag pattern, 5-second flush batching, only writes changed positions, trade log insert on close, start/stop lifecycle, error handling on write failure
+- [x] **4.5** Create `src/bot/alert-listener.ts` — `AlertListener` class: subscribes to Supabase Realtime `alerts` table INSERT events. Filters for `status='received'` and `action in ('buy','sell','close','close_long','close_short')`. Emits `newAlert` event with parsed `AlertRow`. Methods: `start(supabaseClient)` → subscribes; `stop()` → unsubscribes.
+- [x] **4.6** Create `src/bot/alert-listener.test.ts` — ~5 tests: Subscription setup, event filtering (ignores non-received alerts), event emission with correct data, unsubscribe on stop, reconnection handling
+- [x] **4.7** Create `src/bot/llm-analyzer.ts` — `analyzeTrade(context: { symbol, action, vpvrLevels, confirmationScore, price }): Promise<{ reasoning: string; confidence: number } | null>`. Invokes Claude Code CLI via `child_process.exec()` with 10-second timeout. Fire-and-forget — never blocks trade execution. Returns null on timeout/error. Formats context as a structured prompt.
+- [x] **4.8** Create `src/bot/llm-analyzer.test.ts` — ~5 tests: Successful analysis returns reasoning + confidence, timeout returns null, CLI error returns null, context formatting, never blocks (measures execution time)
 
-- [x] **Task 3.3** — Wire `useTick` into `KpiCards.tsx` to keep "Last Alert" timestamp live
-  - Import and call `useTick()` inside `KpiCards` component (line 24)
-  - Same mechanism: the re-render recalculates `formatRelativeTime(lastAlertTime)`
-  - **Complexity:** Low (2 line addition)
+### Phase 5: Bot Runner + CLI
 
-### Phase 4: KPI Calculation Fix (Root Cause 4)
+- [x] **5.1** Create `src/bot/runner.ts` — `BotRunner` class: main orchestrator. Constructor takes `BotConfig`. `start()`: authenticates TopstepX, connects User Hub + Market Hub, starts alert listener, starts write queue, subscribes to market data for configured symbols. Wires: alert listener → position manager → trade executor + write queue. Market Hub ticks → position manager.onTick(). User Hub order events → position manager.onOrderFill(). Position manager close events → trade executor.marketClose() + write queue.writeTradeLog(). LLM analyzer called fire-and-forget on new entries. `stop()`: graceful shutdown — close pending orders, disconnect hubs, flush write queue, unsubscribe alerts.
+- [x] **5.2** Create `src/bot/runner.test.ts` — ~15 tests: Start/stop lifecycle, alert → entry order flow, fill → active position flow, tick → trailing stop flow, SL breach → close flow, opposing alert → cancel/close flow, graceful shutdown flushes state, dry-run mode, error recovery (hub reconnect, write failure)
+- [x] **5.3** Create `src/bot/cli.ts` — Entry point for `npm run bot`. Parses CLI args (`--dry-run`, `--symbol`, `--account-id`). Loads env vars from `.env.local`. Creates and starts `BotRunner`. Renders live terminal status every second: active positions, P&L, pending orders, last alert, connection status. Handles Ctrl+C for graceful shutdown (SIGINT/SIGTERM). Uses `process.stdout.write` with ANSI escape codes for in-place updates.
+- [x] **5.4** Update `package.json` — Add `"bot": "vite-node src/bot/cli.ts --"` and `"backtest": "vite-node src/bot/backtest/cli.ts --"` scripts
 
-- [x] **Task 4.1** — Fix success rate calculation in `dashboard/src/App.tsx`
-  - Line 62: Change `(executed / alerts.length) * 100` → `(executed / pagination.total) * 100`
-  - Guard against division by zero (already present: `total > 0` check on line 62)
-  - Note: `executed` count is still page-scoped — this is a known limitation. The denominator fix is the spec's recommended approach.
-  - **Complexity:** Low (1 line change)
+### Phase 6: Backtest Engine
 
-### Phase 5: Testing
+- [ ] **6.1** Create `src/bot/backtest/engine.ts` — `runBacktest(config: BacktestConfig): Promise<BacktestResult>`. Fetches alerts from Supabase (filtered by date range, symbol). For each alert, fetches historical 5M bars at that timestamp via `getHistoricalBars()`, runs `calculateVpvr()`, then `simulateTrade()`. Aggregates results: win rate, total/avg P&L, profit factor (gross wins / gross losses), Sharpe ratio, max drawdown, per-trade breakdown.
+- [ ] **6.2** Create `src/bot/backtest/engine.test.ts` — ~15 tests: Fetches correct alerts, handles empty alerts, simulation aggregation math, win rate calculation, profit factor, Sharpe ratio, max drawdown tracking, date range filtering
+- [ ] **6.3** Create `src/bot/backtest/reporter.ts` — `formatBacktestReport(result: BacktestResult): string`. Formats results for terminal output: summary stats table, per-trade breakdown, P&L curve (ASCII), win/loss distribution. Uses ANSI colors for profit (green) / loss (red).
+- [ ] **6.4** Create `src/bot/backtest/cli.ts` — Entry point for `npm run backtest`. Parses CLI args (`--symbol`, `--from`, `--to`, `--verbose`). Loads env vars. Runs `runBacktest()`, prints report via `formatBacktestReport()`.
+- [ ] **6.5** Create `src/bot/backtest/index.ts` — Barrel export
 
-- [x] **Task 5.1** — Unit test: `useRealtimeAlerts` calls `refetchQueries` (not `invalidateQueries`) on INSERT/UPDATE events
-  - File: `dashboard/src/hooks/useRealtimeAlerts.test.ts` (new)
-  - Mock `@supabase/supabase-js` and `@tanstack/react-query` queryClient
-  - Verify `refetchQueries` is called with correct queryKey on simulated postgres_changes events
-  - **Complexity:** Medium
+### Phase 7: API Endpoints
 
-- [x] **Task 5.2** — Unit test: `useAlerts` has `refetchInterval: 5000` configured
-  - File: `dashboard/src/hooks/useAlerts.test.ts` (new)
-  - Render hook and verify the query options include refetchInterval
-  - **Complexity:** Low
+- [ ] **7.1** Create `api/positions.ts` — `GET /api/positions` — Self-contained Vercel function. Query params: `symbol`, `state`, `side`, `page`, `limit`, `sort`, `order`. Returns paginated `PositionRow[]` with metadata. Inline Supabase client (no src/ imports per AGENTS.md rules).
+- [ ] **7.2** Create `api/trades-log.ts` — `GET /api/trades-log` — Self-contained Vercel function. Query params: `symbol`, `side`, `from`, `to`, `page`, `limit`, `sort`, `order`. Returns paginated `TradesLogRow[]` with metadata. Inline Supabase client.
+- [ ] **7.3** Update `vercel.json` — Add rewrites for `/api/positions` and `/api/trades-log`
 
-- [x] **Task 5.3** — Unit test: `useTick` increments every second
-  - File: `dashboard/src/hooks/useTick.test.ts` (new)
-  - Use `vi.useFakeTimers()` to advance time and verify tick increments
-  - **Complexity:** Low
+### Phase 8: Dashboard Updates
 
-- [x] **Task 5.4** — Unit test: KPI success rate uses `pagination.total` as denominator
-  - File: can be added to existing test or new `dashboard/src/components/KpiCards.test.tsx`
-  - Verify the calculation logic in `App.tsx` kpiStats memo
-  - **Complexity:** Low
+- [ ] **8.1** Create `dashboard/src/hooks/usePositions.ts` — React Query hook fetching from `/api/positions` with polling interval
+- [ ] **8.2** Create `dashboard/src/hooks/useTradeLog.ts` — React Query hook fetching from `/api/trades-log` with pagination
+- [ ] **8.3** Create `dashboard/src/hooks/useRealtimePositions.ts` — Supabase Realtime subscription for `positions` table changes (INSERT/UPDATE)
+- [ ] **8.4** Create `dashboard/src/components/PositionsTable.tsx` — Active positions table: symbol, side, state, entry price, current price, unrealized P&L (color-coded), TP/SL levels, time in trade. Live updates via Realtime.
+- [ ] **8.5** Create `dashboard/src/components/TradeLogTable.tsx` — Completed trades table: symbol, side, entry/exit price+time, P&L (color-coded), exit reason, highest TP hit, confirmation score. Sortable, paginated.
+- [ ] **8.6** Update `dashboard/src/components/AlertDetailPanel.tsx` — Add VPVR data section: POC, VAH, VAL, confirmation score, timeframe breakdown. Display when alert has associated VPVR data in `raw_payload`.
+- [ ] **8.7** Update `dashboard/src/components/KpiCards.tsx` — Add 2 new KPI cards: "Open Positions" (count from positions API), "Total P&L" (sum of net_pnl from trades_log). Keep existing 4 cards.
+- [ ] **8.8** Update `dashboard/src/App.tsx` — Add tab navigation (Alerts | Positions | Trade Log). Import and render PositionsTable and TradeLogTable in their respective tabs. Wire up useRealtimePositions.
 
-- [x] **Task 5.5** — E2E test: Dashboard real-time refresh without page reload
-  - File: `tests/e2e/dashboard-realtime.e2e.test.ts` (new)
-  - Scenario: Simulate a webhook POST, then verify the alerts API returns the new alert (verifies the pipeline). Since this is a serverless/API project without browser-level e2e, test the API-level data flow.
-  - **Complexity:** Medium
+### Phase 9: Testing
 
-### Phase 6: Lint & Type Check
+- [ ] **9.1** Create `tests/positions-api.test.ts` — Unit tests for GET /api/positions: pagination, filtering by state/symbol/side, sorting, invalid params
+- [ ] **9.2** Create `tests/trades-log-api.test.ts` — Unit tests for GET /api/trades-log: pagination, filtering by symbol/date range, sorting
+- [ ] **9.3** Create `tests/e2e/positions-api.e2e.test.ts` — E2E test: insert a position via Supabase, query via API, verify response structure
+- [ ] **9.4** Create `tests/e2e/trades-log.e2e.test.ts` — E2E test: insert a trade log via Supabase, query via API, verify P&L calculations
+- [ ] **9.5** Create `tests/e2e/bot-lifecycle.e2e.test.ts` — E2E test: full bot lifecycle in dry-run mode — alert → VPVR → entry calc → position created → simulated ticks → TP progression → close → trade logged. Uses real Supabase but mock TopstepX API.
+- [ ] **9.6** Create `tests/e2e/backtest.e2e.test.ts` — E2E test: run backtest against seeded alerts with mocked historical bars, verify result statistics
 
-- [x] **Task 6.1** — Run `npm run lint` and fix any new lint warnings (0-warnings policy)
-  - **Complexity:** Low
+### Phase 10: Validation + Polish
 
-- [x] **Task 6.2** — Run `npm run typecheck` and fix any type errors
-  - **Complexity:** Low
-
-- [x] **Task 6.3** — Run `npm run validate` to confirm all tests pass
-  - **Complexity:** Low
+- [ ] **10.1** Run `npm run validate` — Ensure lint + typecheck + all tests (unit + e2e) pass with zero warnings
+- [ ] **10.2** Run `npm run bot -- --dry-run` — Verify CLI starts, connects to SignalR, shows live status, handles Ctrl+C
+- [ ] **10.3** Run `npm run backtest` — Verify backtest runs against stored alerts, prints formatted results
+- [ ] **10.4** Verify dashboard shows positions table and trade log with correct data
+- [ ] **10.5** Update `AGENTS.md` — Add new tables to schema section, add new env vars if any, add bot/backtest commands
 
 ## Dependencies
 
 ```
-Task 1.1 ──────────────────────────┐
-Task 2.1 ──────────────────────────┤
-Task 2.2 ──────────────────────────┤
-Task 3.1 → Task 3.2, Task 3.3 ────┤
-Task 4.1 ──────────────────────────┤
-                                   ├──→ Phase 5 (Tests) ──→ Phase 6 (Validate)
+Phase 1 (Types + DB) ─── no dependencies
+    │
+    ├──► Phase 2 (Pure Logic) ─── depends on 1.1 (bot types), 1.2 (backtest types)
+    │       │
+    │       ├──► Phase 3 (Position Manager) ─── depends on 2.1, 2.3
+    │       │       │
+    │       │       ├──► Phase 4 (I/O Services) ─── depends on 3.1
+    │       │       │       │
+    │       │       │       └──► Phase 5 (Runner + CLI) ─── depends on 4.1–4.7
+    │       │       │
+    │       │       └──► Phase 5 (also depends on 3.1 directly)
+    │       │
+    │       └──► Phase 6 (Backtest) ─── depends on 2.5 (simulator)
+    │
+    ├──► Phase 7 (API) ─── depends on 1.3, 1.4, 1.6 (DB tables + types)
+    │       │
+    │       └──► Phase 8 (Dashboard) ─── depends on 7.1, 7.2
+    │
+    └──► Phase 9 (Testing) ─── depends on all phases
+            │
+            └──► Phase 10 (Validation) ─── depends on all phases
 ```
 
-- Tasks 1.1, 2.1, 2.2, 4.1 are independent and can be done in any order
-- Task 3.1 (useTick hook) must be created before 3.2 and 3.3 can import it
-- All Phase 1-4 tasks must be complete before Phase 5 tests
-- Phase 6 validation runs last
+**Critical path:** Phase 1 → 2 → 3 → 4 → 5 (bot runner)
+**Parallel track:** Phase 1 → 7 → 8 (API + dashboard, can be built alongside bot)
 
 ## Notes
 
-1. **No database changes needed** — all 4 root causes are frontend-only bugs in the dashboard React app
-2. **No API changes needed** — the `/api/alerts` and `/api/alerts/[id]` endpoints work correctly
-3. **Supabase Realtime is already configured** — migration `20260212100000` already added the alerts table to `supabase_realtime` publication
-4. **`useTick` hook approach** — Creating a shared hook is cleaner than duplicating timer logic in each component. The hook is intentionally simple (~15 lines) to avoid over-engineering
-5. **KPI accuracy limitation** — The success rate with `pagination.total` denominator and page-scoped `executed` numerator is still an approximation. A fully accurate solution would require a server-side aggregate endpoint, but the spec accepts the `pagination.total` denominator approach as sufficient
-6. **Test strategy** — Dashboard components use React Query and Supabase, so unit tests need mocking. The vitest config currently excludes `dashboard/` from the test includes — test files may need to be placed under `tests/` or the vitest config updated to include `dashboard/**/*.test.{ts,tsx}`
+1. **API functions are self-contained** — `api/*.ts` must NOT import from `src/`. Inline Supabase client initialization per AGENTS.md rules.
+2. **Reuse existing TopstepX client** — `src/services/topstepx/client.ts` already has `placeOrder()`, `cancelOrder()`, `closePosition()`, `getHistoricalBars()`, `getCurrentContractId()`. The `TradeExecutor` wraps these, adding dry-run support.
+3. **Reuse existing VPVR calculator** — `src/services/vpvr/calculator.ts` already implements the full algorithm. Entry calculator uses its output.
+4. **Reuse existing confirmation engine** — `src/services/confirmation/engine.ts` for validating alerts before entry.
+5. **SL is in-memory** — The bot monitors SignalR ticks and sends market close on SL breach. No stop orders placed on the exchange. More reliable than modifying stop orders with network latency.
+6. **Supabase writes are rate-limited** — 5-second flush interval with dirty flag pattern. Only state changes trigger writes.
+7. **LLM is fire-and-forget** — 10-second timeout on Claude Code CLI invocation. Never blocks trade execution.
+8. **Bot runs locally** — Not on Vercel. Requires persistent SignalR WebSocket connections. Started via `npm run bot`.
+9. **Backtest is pure simulation** — No API calls for order execution. Fetches stored alerts + historical bars, simulates full lifecycle.
+10. **Existing test count**: 259 unit + 41 e2e tests. This plan adds ~140 unit + ~4 e2e tests.
 
 ---
 
-BUILD COMPLETE - All tasks implemented and validated
+PLANNING COMPLETE - Ready for build mode

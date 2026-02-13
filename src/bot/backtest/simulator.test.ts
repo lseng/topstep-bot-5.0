@@ -46,7 +46,7 @@ function makeVpvr(overrides?: Partial<VpvrResult>): VpvrResult {
   };
 }
 
-const config = { slBufferTicks: 8, quantity: 1, symbol: 'ES' };
+const config = { quantity: 1, symbol: 'ES' };
 
 describe('simulateTrade', () => {
   describe('long entry fill at VAL', () => {
@@ -128,17 +128,17 @@ describe('simulateTrade', () => {
     it('long: SL hit immediately (price drops below initial SL)', () => {
       const alert = makeAlert({ action: 'buy' });
       const vpvr = makeVpvr();
-      // Initial SL = VAL - 8*0.25 = 5020 - 2 = 5018
+      // Initial SL = VAL - (POC - VAL) = 5020 - 30 = 4990 (mirrored TP1 distance)
       const bars: Bar[] = [
         makeBar('2026-02-12T15:05:00Z', 5025, 5025, 5019, 5022), // Fill at VAL
-        makeBar('2026-02-12T15:10:00Z', 5022, 5023, 5017, 5017), // SL breach
+        makeBar('2026-02-12T15:10:00Z', 5022, 5023, 4989, 4989), // SL breach at 4990
       ];
 
       const result = simulateTrade(alert, bars, vpvr, config)!;
       expect(result.entryFilled).toBe(true);
       expect(result.exitReason).toBe('sl_hit_from_active');
-      expect(result.exitPrice).toBe(5018); // Exit at SL level
-      expect(result.grossPnl).toBe(-100); // (5018-5020) * 50 = -100
+      expect(result.exitPrice).toBe(4990); // Exit at SL level
+      expect(result.grossPnl).toBe(-1500); // (4990-5020) * 50 = -1500
     });
   });
 
@@ -185,7 +185,7 @@ describe('simulateTrade', () => {
     it('calculates correct P&L for short winning trade', () => {
       const alert = makeAlert({ action: 'sell' });
       const vpvr = makeVpvr();
-      // Short entry at VAH=5080, SL=5082
+      // Short entry at VAH=5080, SL=5110 (mirrored TP1: 5080 + 30)
       const bars: Bar[] = [
         makeBar('2026-02-12T15:05:00Z', 5075, 5081, 5070, 5072), // Fill at 5080
         makeBar('2026-02-12T15:10:00Z', 5072, 5075, 5048, 5049), // TP1 hit at 5050

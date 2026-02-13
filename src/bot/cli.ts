@@ -66,7 +66,6 @@ async function main(): Promise<void> {
     accountId,
     contractIds,
     dryRun,
-    slBufferTicks: 8,
     writeIntervalMs: 5000,
     symbols,
     quantity,

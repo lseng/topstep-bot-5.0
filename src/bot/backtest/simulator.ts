@@ -11,8 +11,6 @@ import { CONTRACT_SPECS } from '../../services/topstepx/types';
 
 /** Simulator config */
 export interface SimulatorConfig {
-  /** Number of ticks for SL buffer (default: 8) */
-  slBufferTicks: number;
   /** Number of contracts per trade (default: 1) */
   quantity: number;
   /** Symbol for tick size lookup (default: 'ES') */
@@ -20,7 +18,6 @@ export interface SimulatorConfig {
 }
 
 const DEFAULT_CONFIG: SimulatorConfig = {
-  slBufferTicks: 8,
   quantity: 1,
   symbol: 'ES',
 };
@@ -48,10 +45,7 @@ export function simulateTrade(
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
   // Calculate entry levels
-  const entry = calculateEntryPrice(alert.action, vpvrResult, {
-    slBufferTicks: cfg.slBufferTicks,
-    symbol: cfg.symbol,
-  });
+  const entry = calculateEntryPrice(alert.action, vpvrResult);
 
   // Close actions have no entry
   if (!entry) return null;

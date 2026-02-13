@@ -49,7 +49,6 @@ export interface PositionManagerConfig {
   contractIds: Map<string, string>;
   symbols: string[];
   quantity: number;
-  slBufferTicks: number;
 }
 
 /**
@@ -105,10 +104,7 @@ export class PositionManager extends EventEmitter {
     }
 
     // Calculate entry from VPVR
-    const entry = calculateEntryPrice(action, vpvr, {
-      slBufferTicks: this.config.slBufferTicks,
-      symbol: alert.symbol,
-    });
+    const entry = calculateEntryPrice(action, vpvr);
 
     if (!entry) return;
 

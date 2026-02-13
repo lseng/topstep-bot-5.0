@@ -84,7 +84,6 @@ const defaultConfig: BotConfig = {
   accountId: 1001,
   contractIds: new Map([['ES', 'CON.F.US.EPH26']]),
   dryRun: true,
-  slBufferTicks: 8,
   writeIntervalMs: 5000,
   symbols: ['ES'],
   quantity: 1,

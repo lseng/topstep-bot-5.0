@@ -48,7 +48,6 @@ const multiSymbolConfig: PositionManagerConfig = {
   ]),
   symbols: ['MES', 'MNQ', 'MYM'],
   quantity: 1,
-  slBufferTicks: 8,
 };
 
 describe('PositionManager multi-symbol', () => {

@@ -44,32 +44,28 @@ describe('calculateEntryPrice', () => {
       expect(result.tp3).toBe(5100); // rangeHigh
     });
 
-    it('sets initial SL below VAL by buffer ticks', () => {
-      const vpvr = makeVpvr();
-      // Default: 8 ticks * 0.25 (ES tick size) = 2.0 points
+    it('sets SL by mirroring TP1 distance below entry', () => {
+      const vpvr = makeVpvr(); // POC=5050, VAL=5020
+      // TP1 distance = 5050 - 5020 = 30
+      // SL = 5020 - 30 = 4990
       const result = calculateEntryPrice('buy', vpvr)!;
-      expect(result.initialSl).toBe(5018); // 5020 - 2.0
+      expect(result.initialSl).toBe(4990);
     });
 
-    it('respects custom SL buffer ticks', () => {
-      const vpvr = makeVpvr();
-      const result = calculateEntryPrice('buy', vpvr, { slBufferTicks: 4 })!;
-      // 4 ticks * 0.25 = 1.0
-      expect(result.initialSl).toBe(5019); // 5020 - 1.0
+    it('mirrors correctly with narrow value area', () => {
+      const vpvr = makeVpvr({ poc: 5025, val: 5020 });
+      // TP1 distance = 5025 - 5020 = 5
+      // SL = 5020 - 5 = 5015
+      const result = calculateEntryPrice('buy', vpvr)!;
+      expect(result.initialSl).toBe(5015);
     });
 
-    it('uses correct tick size for NQ', () => {
-      const vpvr = makeVpvr();
-      const result = calculateEntryPrice('buy', vpvr, { symbol: 'NQ', slBufferTicks: 8 })!;
-      // NQ tick size is 0.25, so 8 * 0.25 = 2.0
-      expect(result.initialSl).toBe(5018);
-    });
-
-    it('uses correct tick size for MES', () => {
-      const vpvr = makeVpvr();
-      const result = calculateEntryPrice('buy', vpvr, { symbol: 'MES', slBufferTicks: 8 })!;
-      // MES tick size is 0.25, so 8 * 0.25 = 2.0
-      expect(result.initialSl).toBe(5018);
+    it('mirrors correctly with wide value area', () => {
+      const vpvr = makeVpvr({ poc: 5120, val: 5020 });
+      // TP1 distance = 5120 - 5020 = 100
+      // SL = 5020 - 100 = 4920
+      const result = calculateEntryPrice('buy', vpvr)!;
+      expect(result.initialSl).toBe(4920);
     });
   });
 
@@ -99,11 +95,12 @@ describe('calculateEntryPrice', () => {
       expect(result.tp3).toBe(5000); // rangeLow
     });
 
-    it('sets initial SL above VAH by buffer ticks', () => {
-      const vpvr = makeVpvr();
-      // Default: 8 ticks * 0.25 = 2.0
+    it('sets SL by mirroring TP1 distance above entry', () => {
+      const vpvr = makeVpvr(); // POC=5050, VAH=5080
+      // TP1 distance = 5080 - 5050 = 30
+      // SL = 5080 + 30 = 5110
       const result = calculateEntryPrice('sell', vpvr)!;
-      expect(result.initialSl).toBe(5082); // 5080 + 2.0
+      expect(result.initialSl).toBe(5110);
     });
   });
 
@@ -122,13 +119,12 @@ describe('calculateEntryPrice', () => {
   });
 
   describe('edge cases', () => {
-    it('handles flat range (VAL === VAH === POC)', () => {
+    it('handles flat range (VAL === VAH === POC) — SL equals entry', () => {
       const vpvr = makeVpvr({ poc: 5000, vah: 5000, val: 5000, rangeHigh: 5000, rangeLow: 5000 });
       const result = calculateEntryPrice('buy', vpvr)!;
       expect(result.entryPrice).toBe(5000);
-      expect(result.tp1).toBe(5000);
-      expect(result.tp2).toBe(5000);
-      expect(result.tp3).toBe(5000);
+      // TP1 distance = 0, so SL = entry
+      expect(result.initialSl).toBe(5000);
     });
 
     it('handles narrow value area', () => {
@@ -136,14 +132,8 @@ describe('calculateEntryPrice', () => {
       const result = calculateEntryPrice('buy', vpvr)!;
       expect(result.entryPrice).toBe(5049);
       expect(result.tp1).toBe(5050);
-      expect(result.tp2).toBe(5051);
-    });
-
-    it('defaults to ES tick size for unknown symbol', () => {
-      const vpvr = makeVpvr();
-      const result = calculateEntryPrice('buy', vpvr, { symbol: 'UNKNOWN' })!;
-      // Falls back to 0.25 tick size: 8 * 0.25 = 2.0
-      expect(result.initialSl).toBe(5018);
+      // TP1 distance = 1, SL = 5049 - 1 = 5048
+      expect(result.initialSl).toBe(5048);
     });
   });
 });

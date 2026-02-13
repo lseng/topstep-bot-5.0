@@ -47,7 +47,6 @@ const defaultConfig: PositionManagerConfig = {
   contractIds: new Map([['ES', 'CON.F.US.EPH26']]),
   symbols: ['ES'],
   quantity: 1,
-  slBufferTicks: 8,
 };
 
 describe('PositionManager', () => {
@@ -120,7 +119,7 @@ describe('PositionManager', () => {
       expect(pos.tp1Price).toBe(5050); // POC
       expect(pos.tp2Price).toBe(5080); // VAH
       expect(pos.tp3Price).toBe(5100); // rangeHigh
-      expect(pos.currentSl).toBe(5018); // VAL - 8*0.25
+      expect(pos.currentSl).toBe(4990); // VAL - (POC - VAL) = 5020 - 30
     });
 
     it('sets confirmation score when provided', () => {
@@ -297,7 +296,7 @@ describe('PositionManager', () => {
       const closeHandler = vi.fn();
       pm.on('closePosition', closeHandler);
 
-      pm.onTick('ES', 5018, new Date()); // At initial SL
+      pm.onTick('ES', 4990, new Date()); // At initial SL (mirrored TP1 distance)
 
       expect(closeHandler).toHaveBeenCalledWith(
         expect.objectContaining({

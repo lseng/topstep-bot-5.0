@@ -83,8 +83,6 @@ export interface BotConfig {
   contractIds: Map<string, string>;
   /** If true, log orders but don't execute via API */
   dryRun: boolean;
-  /** Number of ticks below/above entry for initial SL (default: 8) */
-  slBufferTicks: number;
   /** Interval in ms to flush dirty positions to Supabase (default: 5000) */
   writeIntervalMs: number;
   /** Trading symbols (e.g. ['MES', 'MNQ', 'MYM']) */

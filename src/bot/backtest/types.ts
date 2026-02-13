@@ -10,8 +10,6 @@ export interface BacktestConfig {
   toDate: string;
   /** Trading symbols to filter alerts (e.g. ['MES', 'MNQ']) */
   symbols: string[];
-  /** Number of ticks below/above entry for initial SL (default: 8) */
-  slBufferTicks: number;
   /** Number of contracts per trade (default: 1) */
   quantity: number;
   /** Whether to print verbose per-trade output */

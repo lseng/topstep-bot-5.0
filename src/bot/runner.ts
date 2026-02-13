@@ -46,7 +46,6 @@ export class BotRunner {
       contractIds: config.contractIds,
       symbols: config.symbols,
       quantity: config.quantity,
-      slBufferTicks: config.slBufferTicks,
     });
     this.executor = new TradeExecutor(config.dryRun);
     this.writeQueue = new SupabaseWriteQueue(config.writeIntervalMs);

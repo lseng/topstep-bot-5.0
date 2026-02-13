@@ -19,7 +19,7 @@ export function formatBacktestReport(result: BacktestResult): string {
   // Config summary
   lines.push(`  Symbols:      ${result.config.symbols.join(', ')}`);
   lines.push(`  Period:       ${result.config.fromDate} to ${result.config.toDate}`);
-  lines.push(`  SL Buffer:    ${result.config.slBufferTicks} ticks`);
+  lines.push(`  SL Method:    mirrored TP1 distance`);
   lines.push(`  Quantity:     ${result.config.quantity} contracts`);
   lines.push('');
 

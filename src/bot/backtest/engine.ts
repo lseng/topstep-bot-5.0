@@ -86,7 +86,6 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
 
       // Simulate the trade using the alert's own symbol
       const trade = simulateTrade(alert, bars, vpvr, {
-        slBufferTicks: config.slBufferTicks,
         quantity: config.quantity,
         symbol: alert.symbol,
       });

@@ -57,7 +57,6 @@ const defaultConfig: BacktestConfig = {
   fromDate: '2026-01-01T00:00:00Z',
   toDate: '2026-01-31T23:59:59Z',
   symbols: ['ES'],
-  slBufferTicks: 8,
   quantity: 1,
   verbose: false,
 };

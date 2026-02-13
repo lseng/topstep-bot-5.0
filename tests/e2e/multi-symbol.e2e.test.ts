@@ -113,7 +113,6 @@ const multiConfig: BotConfig = {
     ['MYM', 'CON.F.US.MYM.H26'],
   ]),
   dryRun: true,
-  slBufferTicks: 8,
   writeIntervalMs: 5000,
   symbols: ['MES', 'MNQ', 'MYM'],
   quantity: 1,

@@ -13,7 +13,22 @@ vi.mock('../src/lib/logger', () => ({
 }));
 
 describe('CONTRACT_SPECS', () => {
-  const allSymbols = ['ES', 'NQ', 'MES', 'MNQ', 'MYM', 'MGC', 'MCL', 'MBT'];
+  const allSymbols = [
+    // CME Equity Index Futures
+    'ES', 'MES', 'NQ', 'MNQ', 'YM', 'MYM', 'RTY', 'M2K', 'NKD',
+    // CME Crypto Futures
+    'MBT', 'MET',
+    // CME FX Futures
+    '6A', '6B', '6C', '6E', '6J', '6S', 'E7', 'M6E', 'M6A', 'M6B', '6M', '6N',
+    // CME NYMEX Energy Futures
+    'CL', 'QM', 'MCL', 'NG', 'QG', 'MNG', 'RB', 'HO',
+    // CME COMEX Metals Futures
+    'GC', 'MGC', 'SI', 'SIL', 'HG', 'MHG', 'PL',
+    // CBOT Agricultural Futures
+    'ZC', 'ZW', 'ZS', 'ZM', 'ZL', 'HE', 'LE',
+    // CBOT Interest Rate Futures
+    'ZT', 'ZF', 'ZN', 'TN', 'ZB', 'UB',
+  ];
 
   it('has entries for all expected symbols', () => {
     for (const sym of allSymbols) {
@@ -31,7 +46,7 @@ describe('CONTRACT_SPECS', () => {
       expect(spec.contractIdPrefix).toBeTruthy();
       expect(spec.marginDay).toBeGreaterThan(0);
       expect(spec.marginOvernight).toBeGreaterThan(0);
-      expect(['quarterly', 'monthly']).toContain(spec.expiryCycle);
+      expect(['quarterly', 'monthly', 'quarterly_fjnv']).toContain(spec.expiryCycle);
     }
   });
 
@@ -86,6 +101,59 @@ describe('CONTRACT_SPECS', () => {
   it('monthly symbols have correct expiryCycle', () => {
     for (const sym of ['MGC', 'MCL', 'MBT']) {
       expect(CONTRACT_SPECS[sym].expiryCycle).toBe('monthly');
+    }
+  });
+
+  it('PL uses quarterly_fjnv expiry cycle', () => {
+    expect(CONTRACT_SPECS['PL'].expiryCycle).toBe('quarterly_fjnv');
+  });
+
+  it('has exactly 51 symbols', () => {
+    expect(Object.keys(CONTRACT_SPECS).length).toBe(51);
+  });
+
+  it('all 51 symbols have valid contractIdPrefix format', () => {
+    for (const [sym, spec] of Object.entries(CONTRACT_SPECS)) {
+      expect(spec.contractIdPrefix).toMatch(/^CON\.F\.US\..+$/);
+      // Prefix must not end with a dot
+      expect(spec.contractIdPrefix.endsWith('.')).toBe(false);
+    }
+  });
+
+  it('corrected contract ID prefixes use API-verified values', () => {
+    // Key prefix corrections from API verification pass
+    const corrections: Record<string, string> = {
+      '6A': 'CON.F.US.DA6',
+      '6B': 'CON.F.US.BP6',
+      '6C': 'CON.F.US.CA6',
+      '6E': 'CON.F.US.EU6',
+      '6J': 'CON.F.US.JY6',
+      '6S': 'CON.F.US.SF6',
+      '6M': 'CON.F.US.MX6',
+      '6N': 'CON.F.US.NE6',
+      GC: 'CON.F.US.GCE',
+      CL: 'CON.F.US.CLE',
+      NG: 'CON.F.US.NGE',
+      SI: 'CON.F.US.SIE',
+      HG: 'CON.F.US.CPE',
+      PL: 'CON.F.US.PLE',
+      ZN: 'CON.F.US.TYA',
+      ZB: 'CON.F.US.USA',
+      ZT: 'CON.F.US.TUA',
+      ZF: 'CON.F.US.FVA',
+      TN: 'CON.F.US.TNA',
+      UB: 'CON.F.US.ULA',
+      ZW: 'CON.F.US.ZWA',
+      ZC: 'CON.F.US.ZCE',
+      ZS: 'CON.F.US.ZSE',
+      ZM: 'CON.F.US.ZME',
+      ZL: 'CON.F.US.ZLE',
+      LE: 'CON.F.US.GLE',
+      RB: 'CON.F.US.RBE',
+      HO: 'CON.F.US.HOE',
+    };
+    for (const [sym, expectedPrefix] of Object.entries(corrections)) {
+      expect(CONTRACT_SPECS[sym].contractIdPrefix).toBe(expectedPrefix);
     }
   });
 });
@@ -179,6 +247,44 @@ describe('getCurrentContractId', () => {
       mockDate(2026, 12, 15); // Dec 15 → still Dec
       const id = getCurrentContractId('MGC');
       expect(id).toBe('CON.F.US.MGC.Z26'); // Z = Dec
+    });
+  });
+
+  describe('quarterly_fjnv symbols (PL)', () => {
+    it('resolves to Jan(F) in early January', () => {
+      mockDate(2026, 1, 10); // Jan 10 → in Jan expiry, before rollover
+      const id = getCurrentContractId('PL');
+      expect(id).toBe('CON.F.US.PLE.F26'); // F = Jan
+    });
+
+    it('rolls to Apr(J) after Jan 19', () => {
+      mockDate(2026, 1, 20); // Jan 20 → rolled past Jan, next = Apr
+      const id = getCurrentContractId('PL');
+      expect(id).toBe('CON.F.US.PLE.J26'); // J = Apr
+    });
+
+    it('resolves to Apr(J) in early April', () => {
+      mockDate(2026, 4, 10); // Apr 10 → in Apr expiry
+      const id = getCurrentContractId('PL');
+      expect(id).toBe('CON.F.US.PLE.J26'); // J = Apr
+    });
+
+    it('rolls to Jul(N) after Apr 19', () => {
+      mockDate(2026, 4, 20); // Apr 20 → rolled, next = Jul
+      const id = getCurrentContractId('PL');
+      expect(id).toBe('CON.F.US.PLE.N26'); // N = Jul
+    });
+
+    it('resolves to Oct(V) in early October', () => {
+      mockDate(2026, 10, 10); // Oct 10 → in Oct expiry
+      const id = getCurrentContractId('PL');
+      expect(id).toBe('CON.F.US.PLE.V26'); // V = Oct
+    });
+
+    it('rolls to Jan(F) next year after Oct 19', () => {
+      mockDate(2026, 10, 20); // Oct 20 → rolled, next = Jan 2027
+      const id = getCurrentContractId('PL');
+      expect(id).toBe('CON.F.US.PLE.F27'); // F = Jan 2027
     });
   });
 

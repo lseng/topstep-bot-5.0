@@ -126,9 +126,9 @@ describe('Dynamic Symbol Handling', () => {
     });
 
     it('NG contract ID prefix is correct for resolution', () => {
-      expect(CONTRACT_SPECS['NG'].contractIdPrefix).toBe('CON.F.US.NG');
+      expect(CONTRACT_SPECS['NG'].contractIdPrefix).toBe('CON.F.US.NGE');
       // Verify the prefix would produce correct contract IDs
-      expect(CONTRACT_SPECS['NG'].contractIdPrefix).toMatch(/^CON\.F\.US\.NG$/);
+      expect(CONTRACT_SPECS['NG'].contractIdPrefix).toMatch(/^CON\.F\.US\.NGE$/);
     });
   });
 

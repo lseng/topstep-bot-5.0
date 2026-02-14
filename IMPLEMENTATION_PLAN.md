@@ -1,199 +1,133 @@
 # Implementation Plan
 
-**Last Updated:** 2026-02-12
-**Status:** BUILD COMPLETE
-**Feature:** Multi-symbol trading support (MES, MNQ, MYM, MGC, MCL, MBT)
-**Issue:** #12
+**Last Updated:** 2026-02-14
+**Status:** COMPLETE
+**Issue:** #22 — Expand CONTRACT_SPECS to all 51 Topstep symbols + 1M data pipeline
 
 ## Summary
 
-Enable the bot to trade multiple symbols simultaneously on a single TopstepX connection. The architecture is partially ready — MarketHub, AlertListener, TradeExecutor, and EntryCalculator are already multi-symbol compatible. The remaining work centers on: (1) CLI/config changes from `symbol: string` to `symbols: string[]`, (2) adding contract specs for MYM/MGC/MCL/MBT, (3) refactoring BotRunner + PositionManager to handle multiple symbols concurrently, (4) updating the backtest engine, (5) adding symbol filters to the dashboard, and (6) comprehensive testing.
+Expand `CONTRACT_SPECS` from the original 8 symbols to all 51 Topstep tradable products has been completed in the code. Three scripts have been added (fetch-1m-bars, verify-contract-ids, ml-optimize-backtest). The `bars_1m` Supabase table and migration exist. Database types are updated.
+
+The remaining work is fixing **3 test failures** caused by the contract spec expansion (stale assertions) and a pre-existing dashboard issue, then updating the test suite to properly validate all 51 symbols.
 
 ## Specifications Analyzed
-- [x] specs/multi-symbol-trading-support-mes-mnq-mym-mgc-mcl-m.md - Primary spec for issue #12
+- [x] specs/expand-contract-specs-to-all-51-topstep-symbols-1m.md — Analyzed
 
 ## Database Analysis
 
 ### Existing Tables
-- `alerts` — TradingView webhook alerts (already has `symbol` column, no changes needed)
-- `positions` — Bot-managed positions (already has `symbol` column, no changes needed)
-- `trades_log` — Completed trade records (already has `symbol` column, no changes needed)
+| Table | Migration | Status |
+|-------|-----------|--------|
+| `alerts` | 20260212000000 | Exists, up to date |
+| `positions` | 20260213000000 + 20260213100000 | Exists, up to date |
+| `trades_log` | 20260213000001 + 20260213100000 | Exists, up to date |
+| `bars_1m` | 20260214000000 | **NEW** — Created for this feature |
 
 ### Schema Changes Required
-- **None required for core multi-symbol support.** All three tables already have a `symbol` column and can store data for any symbol.
-- **Optional:** `bot_sessions` table (spec mentions it for tracking active bot state). This is a "nice to have" and can be deferred. The dashboard can show active symbols without it.
+None. The `bars_1m` table migration already exists with correct schema:
+- `(symbol, timestamp)` unique constraint
+- Indexes on `(symbol, timestamp)`, `timestamp`, `contract_id`
+- RLS enabled with service role full access + anon read
+- Types added to `src/types/database.ts` (`Bars1mRow`, `Bars1mInsert`)
 
 ## Gap Analysis
 
-### Already Multi-Symbol Ready (No Changes)
-| Component | File | Why |
-|-----------|------|-----|
-| AlertListener | `src/bot/alert-listener.ts` | Listens to ALL alerts, no symbol filter |
-| TradeExecutor | `src/bot/trade-executor.ts` | Takes `symbol` as parameter per method call |
-| MarketHub | `src/services/topstepx/streaming.ts` | `subscribedContracts: Set<string>`, supports multiple `subscribe()` calls |
-| UserHub | `src/services/topstepx/streaming.ts` | Account-wide, not symbol-specific |
-| EntryCalculator | `src/bot/entry-calculator.ts` | Takes `symbol` as optional config param |
-| Database schema | `supabase/migrations/` | All tables have `symbol` column |
-| API endpoints | `api/*.ts` | All support `?symbol=` filter param |
+### Already Implemented (No work needed)
+| Item | File | Status |
+|------|------|--------|
+| 51 symbols in CONTRACT_SPECS | `src/services/topstepx/types.ts` | Done — all 51 symbols present |
+| `quarterly_fjnv` expiry cycle for PL | `src/services/topstepx/types.ts:267` | Done |
+| `getCurrentContractId()` supports `quarterly_fjnv` | `src/services/topstepx/client.ts:213-218` | Done |
+| `bars_1m` table migration | `supabase/migrations/20260214000000` | Done |
+| `bars_1m` database types | `src/types/database.ts:163-203` | Done |
+| `fetch-1m-bars.ts` script | `scripts/fetch-1m-bars.ts` | Done |
+| `verify-contract-ids.ts` script | `scripts/verify-contract-ids.ts` | Done |
+| `ml-optimize-backtest.ts` script | `scripts/ml-optimize-backtest.ts` | Done |
+| MINI_SYMBOLS set updated | `src/services/topstepx/types.ts:800-808` | Done |
+| `getMicroEquivalent()` function | `src/services/topstepx/types.ts:815-817` | Done |
 
-### Needs Changes
-| Component | File | What's Wrong |
-|-----------|------|-------------|
-| BotConfig type | `src/bot/types.ts:79-94` | `symbol: string` + `contractId: string` (singular) |
-| Bot CLI | `src/bot/cli.ts:38` | `--symbol` flag (singular), resolves 1 contract |
-| BotRunner | `src/bot/runner.ts` | Creates 1 PositionManager, subscribes 1 contract, hardcodes `this.config.symbol` in quote handler (line 146) |
-| PositionManager | `src/bot/position-manager.ts` | Config has single `symbol`/`contractId`; `updateUnrealizedPnl` (line 343) and `buildTradeResult` (line 354) use `this.config.symbol` instead of `position.symbol`; `calculateEntryPrice` call (line 110) uses `this.config.symbol` |
-| ~~CONTRACT_SPECS~~ | `src/services/topstepx/types.ts:270-790` | **DONE** — All 51 Topstep tradable symbols added with API-verified contract ID prefixes and tick sizes. Supports `quarterly`, `monthly`, and `quarterly_fjnv` expiry cycles. |
-| ~~getCurrentContractId~~ | `src/services/topstepx/client.ts:205-239` | **DONE** — Supports `quarterly` (HMUZ), `monthly`, and `quarterly_fjnv` (Jan/Apr/Jul/Oct) expiry cycles. |
-| Backtest CLI | `src/bot/backtest/cli.ts` | Single `--symbol` flag |
-| BacktestConfig | `src/bot/backtest/types.ts:6-19` | `symbol: string` (singular) |
-| Backtest engine | `src/bot/backtest/engine.ts:34` | `.eq('symbol', config.symbol)` — single symbol filter |
-| Bot status display | `src/bot/cli.ts:85-86` | Shows single `Symbol:` and `Contract:` line |
-| Dashboard KPI | `dashboard/src/components/KpiCards.tsx` | Aggregates P&L globally, no per-symbol breakdown |
-| Dashboard Positions tab | `dashboard/src/App.tsx` | No symbol filter passed to `usePositions()` hook |
-| Dashboard Trade Log tab | `dashboard/src/App.tsx` | No symbol filter passed to `useTradeLog()` hook |
-| Dashboard symbol list | `dashboard/src/App.tsx:96-99` | Extracts symbols only from alerts, not from positions/trades |
+### Test Failures (Must fix)
+
+**3 failing tests across 2 files:**
+
+#### 1. `tests/dynamic-symbols-eod-sync.test.ts` — 1 failure
+- **Test:** `NG contract ID prefix is correct for resolution`
+- **Line 129:** `expect(CONTRACT_SPECS['NG'].contractIdPrefix).toBe('CON.F.US.NG')`
+- **Actual:** `'CON.F.US.NGE'` (corrected during API verification)
+- **Fix:** Update test assertion to match the verified API prefix `'CON.F.US.NGE'`
+
+#### 2. `tests/dashboard-realtime-fixes.test.ts` — 2 failures
+- **Test:** `AlertsTable uses useTick > imports useTick hook` (line 58)
+- **Test:** `AlertsTable uses useTick > calls useTick() in component body` (line 62)
+- **Root cause:** `dashboard/src/components/AlertsTable.tsx` does not import or use `useTick()`. The test expects it but it was never added (pre-existing issue, not caused by this feature).
+- **Fix:** Add `useTick()` import and call to `AlertsTable.tsx` (matches pattern in `PositionsTable.tsx` and `KpiCards.tsx`)
+
+### Test Coverage Gaps (Should fix)
+
+#### 3. `tests/contract-specs.test.ts` — Outdated
+- **Line 16:** `allSymbols` only lists 8 symbols (`ES, NQ, MES, MNQ, MYM, MGC, MCL, MBT`)
+- **Line 34:** `expiryCycle` validation only accepts `['quarterly', 'monthly']`, missing `'quarterly_fjnv'`
+- **Fix:** Update `allSymbols` to include all 51 symbols, update expiryCycle validation to include `'quarterly_fjnv'`
 
 ## Prioritized Tasks
 
-### Phase 1: Contract Specs & Resolution (Foundation)
+### Phase 1: Fix Failing Tests (HIGH PRIORITY)
 
-- [x] **1.1** Add CONTRACT_SPECS for all 51 Topstep tradable symbols in `src/services/topstepx/types.ts`. All contract ID prefixes verified against TopstepX `searchContracts` API. Tick sizes and values confirmed from API data. 30 prefix corrections applied (e.g. 6A→DA6, GC→GCE, ZN→TYA). 722,792 bars of 1M data fetched and stored in Supabase `bars_1m` table across 35 symbols.
+- [x] **Task 1** — Fix NG contract ID assertion in `tests/dynamic-symbols-eod-sync.test.ts:129` — Changed expected value from `'CON.F.US.NG'` to `'CON.F.US.NGE'` and updated regex
 
-- [x] **1.2** Refactor `getCurrentContractId()` to support `quarterly` (HMUZ), `monthly`, and `quarterly_fjnv` (Jan/Apr/Jul/Oct for Platinum) expiry cycles. `expiryCycle` field on `ContractSpec` type drives contract month resolution.
+- [x] **Task 2** — Fix AlertsTable useTick in `dashboard/src/components/AlertsTable.tsx` — Added `useTick` import and call matching PositionsTable/KpiCards pattern
 
-- [x] **1.3** Add unit tests for new contract specs and expiry resolution in `tests/contract-specs.test.ts`. Test that `getCurrentContractId('MYM')`, `getCurrentContractId('MGC')`, `getCurrentContractId('MCL')`, `getCurrentContractId('MBT')` return valid contract IDs with correct prefixes. Test monthly vs quarterly rollover logic. — LOW complexity
+### Phase 2: Update Test Coverage
 
-### Phase 2: Config & Type Changes
+- [x] **Task 3** — Updated `tests/contract-specs.test.ts` `allSymbols` array to include all 51 symbols
 
-- [x] **2.1** Update `BotConfig` interface in `src/bot/types.ts:79-94`: change `symbol: string` to `symbols: string[]`, change `contractId: string` to `contractIds: Map<string, string>` (symbol → contractId mapping). — LOW complexity
+- [x] **Task 4** — Updated expiryCycle validation to accept `'quarterly_fjnv'`
 
-- [x] **2.2** Update `PositionManagerConfig` in `src/bot/position-manager.ts:47-53`: change `symbol: string` to `symbols: string[]`, change `contractId: string` to `contractIds: Map<string, string>`. — LOW complexity
+- [x] **Task 5** — Added `quarterly_fjnv` test cases for `getCurrentContractId` — 6 tests covering PL F/J/N/V cycle with rollover
 
-- [x] **2.3** Fix `PositionManager.onAlert()` at line 108-111: change `symbol: this.config.symbol` to `symbol: alert.symbol` in the `calculateEntryPrice()` call so entry prices use the correct symbol's tick size. — LOW complexity
+- [x] **Task 6** — Added tests for all 28 corrected contract ID prefixes + format validation for all 51 symbols
 
-- [x] **2.4** Fix `PositionManager.updateUnrealizedPnl()` at line 342-343: change `CONTRACT_SPECS[this.config.symbol]` to `CONTRACT_SPECS[position.symbol]`. — LOW complexity
+### Phase 3: E2E Tests
 
-- [x] **2.5** Fix `PositionManager.buildTradeResult()` at line 354: change `CONTRACT_SPECS[this.config.symbol]` to `CONTRACT_SPECS[position.symbol]`. — LOW complexity
+- [x] **Task 7** — E2E test: `tests/e2e/bars-1m-schema.e2e.test.ts` — 24 tests covering schema, columns, constraints, indexes, RLS, and types
 
-- [x] **2.6** Fix `PositionManager.createPosition()` at line 283: change `contractId: this.config.contractId` to `contractId: this.config.contractIds.get(alert.symbol) ?? ''`. — LOW complexity
+- [x] **Task 8** — E2E test: `tests/e2e/contract-specs-51.e2e.test.ts` — Verifies all 51 symbols have valid `CON.F.US.*` prefix format
 
-### Phase 3: BotRunner Multi-Symbol Orchestration
+- [x] **Task 9** — E2E test: `tests/e2e/contract-specs-51.e2e.test.ts` — Verifies `getCurrentContractId()` produces valid contract IDs for all 51 symbols with correct month codes per expiry cycle
 
-- [x] **3.1** Update `BotRunner.constructor()` in `src/bot/runner.ts:36-52`: pass multi-symbol config to PositionManager. Update `PositionManagerConfig` to include `symbols` array and `contractIds` map. — MEDIUM complexity
+### Phase 4: Validation
 
-- [x] **3.2** Update `BotRunner.start()` in `src/bot/runner.ts:71-74`: loop over `this.config.symbols` and call `this.marketHub.subscribe(contractId)` for each symbol's contract. Log all symbols being watched. — LOW complexity
-
-- [x] **3.3** Update `BotRunner.wireEvents()` quote handler at line 145-147: replace `this.positionManager.onTick(this.config.symbol, ...)` with contractId → symbol lookup. Build a `contractToSymbol: Map<string, string>` from config and use `event.contractId` to resolve the symbol. — MEDIUM complexity
-
-- [x] **3.4** Add symbol filtering to alert handler in `BotRunner.wireEvents()` at line 130: add guard `if (!this.config.symbols.includes(alert.symbol)) return;` to only process alerts for configured symbols. — LOW complexity
-
-- [x] **3.5** Update `BotRunner.getStatus()` at line 110-124: add `symbols: string[]` and `contractIds: string[]` to the returned status object. — LOW complexity
-
-### Phase 4: CLI Changes
-
-- [x] **4.1** Update bot CLI in `src/bot/cli.ts`: add `--symbols` flag (comma-separated) with backward compat for `--symbol` (single). Parse: `const symbolsArg = getArg(args, '--symbols') ?? getArg(args, '--symbol') ?? 'ES'; const symbols = symbolsArg.split(',').map(s => s.trim().toUpperCase());`. Resolve contract IDs for all symbols. Update usage text. — MEDIUM complexity
-
-- [x] **4.2** Update bot CLI status display in `src/bot/cli.ts:80-109`: show list of all watched symbols and their contracts. Show per-symbol active position status. Format example: `Symbols: MES, MNQ, MYM (3 contracts)`. — LOW complexity
-
-- [x] **4.3** Update `BotConfig` construction in `src/bot/cli.ts:58-66`: build `symbols` array and `contractIds` map from parsed symbols. — LOW complexity
-
-### Phase 5: Backtest Multi-Symbol Support
-
-- [x] **5.1** Update `BacktestConfig` in `src/bot/backtest/types.ts:12`: change `symbol: string` to `symbols: string[]`. — LOW complexity
-
-- [x] **5.2** Update backtest CLI in `src/bot/backtest/cli.ts`: add `--symbols` flag with backward compat for `--symbol`. Parse comma-separated symbols. Update usage text. — LOW complexity
-
-- [x] **5.3** Update backtest engine in `src/bot/backtest/engine.ts:34`: change `.eq('symbol', config.symbol)` to `.in('symbol', config.symbols)`. Resolve contract IDs per symbol. Group alerts by symbol for per-symbol contract resolution. — MEDIUM complexity
-
-- [x] **5.4** Update backtest reporter to show per-symbol breakdown in addition to aggregate stats. — LOW complexity
-
-### Phase 6: Dashboard UX Updates
-
-- [x] **6.1** Add symbol filter dropdown to Positions tab: extract symbols from positions data, add filter UI component, pass `symbol` param to `usePositions()` hook call in `dashboard/src/App.tsx`. — LOW complexity
-
-- [x] **6.2** Add symbol filter dropdown to Trade Log tab: extract symbols from trades data, add filter UI component, pass `symbol` param to `useTradeLog()` hook call in `dashboard/src/App.tsx`. — LOW complexity
-
-- [x] **6.3** Update symbol list extraction in `dashboard/src/App.tsx:96-99`: merge symbols from alerts, positions, AND trades data sources. — LOW complexity
-
-- [x] **6.4** Add per-symbol P&L breakdown to KPI cards in `dashboard/src/components/KpiCards.tsx`: show total P&L plus per-symbol subtotals. Accept optional `selectedSymbol` prop to filter KPIs. — MEDIUM complexity
-
-### Phase 7: Unit Tests
-
-- [x] **7.1** Add unit test for multi-symbol CLI parsing in `tests/cli-multi-symbol.test.ts`: test `--symbols MES,MNQ,MYM` parsing, backward compat with `--symbol ES`, default to `['ES']`, invalid symbol handling. — LOW complexity
-
-- [x] **7.2** Add unit test for PositionManager multi-symbol support in `tests/position-manager-multi-symbol.test.ts`: test concurrent positions on different symbols, per-symbol P&L calculation using correct `pointValue`, alert routing to correct symbol position. — MEDIUM complexity
-
-- [x] **7.3** Add unit test for BotRunner quote routing in `tests/bot-runner-multi-symbol.test.ts`: test contractId → symbol resolution, quote events routed to correct symbol in PositionManager. — MEDIUM complexity
-
-### Phase 8: E2E Tests
-
-- [x] **8.1** Add E2E test for multi-symbol alert routing in `tests/e2e/multi-symbol.e2e.test.ts`: insert alerts for MES, MNQ, MYM simultaneously, verify each creates the correct position with correct contract specs. — MEDIUM complexity
-
-- [x] **8.2** Add E2E test for multi-symbol backtest in `tests/e2e/multi-symbol-backtest.e2e.test.ts`: run backtest with `symbols: ['MES', 'MNQ']`, verify per-symbol results and aggregate stats. — MEDIUM complexity
-
-- [x] **8.3** Add E2E test for API filtering across symbols: verify `/api/positions?symbol=MES` returns only MES positions when multiple symbols have data. — LOW complexity
-
-### Phase 9: Validation
-
-- [x] **9.1** Run `npm run validate` (lint + typecheck + test + test:e2e) — ensure zero errors. — LOW complexity
-
-- [x] **9.2** Manual dry-run test with `npm run bot -- --account-id <id> --symbols MES,MNQ --dry-run` to verify startup, contract resolution, and status display. — LOW complexity *(Requires live TopstepX credentials — CLI parsing and contract resolution verified via unit tests; full startup requires manual test with real account)*
+- [x] **Task 10** — `npm run validate` passes: 0 lint warnings, 0 type errors, 540 unit tests, 197 e2e tests
 
 ## Dependencies
 
 ```
-Phase 1 (Contract Specs)
-  └── Phase 2 (Config Types) depends on 1.1 (new specs must exist)
-       └── Phase 3 (BotRunner) depends on 2.1, 2.2
-       └── Phase 4 (CLI) depends on 2.1
-       └── Phase 5 (Backtest) depends on 2.1
-  Phase 6 (Dashboard) — independent, can run in parallel with Phases 2-5
-  Phase 7 (Unit Tests) depends on Phases 2-5
-  Phase 8 (E2E Tests) depends on Phases 2-6
-  Phase 9 (Validation) depends on all prior phases
+Task 1 ──┐
+Task 2 ──┤
+Task 3 ──┼──→ Task 10 (final validation)
+Task 4 ──┤
+Task 5 ──┤
+Task 6 ──┤
+Task 7 ──┤
+Task 8 ──┤
+Task 9 ──┘
 ```
 
-## Design Decisions
-
-### Architecture: Single PositionManager with per-symbol position map (NOT one PM per symbol)
-
-The PositionManager already stores positions in `Map<string, ManagedPosition>` keyed by symbol. Rather than creating N PositionManagers (one per symbol), we keep a single instance and fix the 3 places where `this.config.symbol` is used instead of `position.symbol`. This is simpler, avoids wiring N event emitters, and aligns with the existing design.
-
-### Contract resolution: Add `expiryCycle` to ContractSpec
-
-Rather than maintaining a separate lookup table, we add `expiryCycle: 'quarterly' | 'monthly'` to the existing `ContractSpec` interface. The `getCurrentContractId()` function then selects the correct expiry months based on this field. Quarterly = [3,6,9,12] (H/M/U/Z), Monthly = [1..12].
-
-### CLI backward compatibility
-
-`--symbol ES` continues to work (treated as `--symbols ES`). The new `--symbols` flag takes comma-separated values. Parsing priority: `--symbols` > `--symbol` > default `'ES'`.
-
-### BotConfig shape
-
-```typescript
-interface BotConfig {
-  accountId: number;
-  symbols: string[];                    // was: symbol: string
-  contractIds: Map<string, string>;     // was: contractId: string — keyed by symbol
-  dryRun: boolean;
-  slBufferTicks: number;
-  writeIntervalMs: number;
-  quantity: number;                     // same quantity for all symbols
-}
-```
-
-### Quote routing
-
-BotRunner builds `contractToSymbol: Map<string, string>` at startup. The `onQuote` handler looks up `event.contractId` to find the symbol, then calls `positionManager.onTick(symbol, price, timestamp)`.
+Tasks 1-9 are independent of each other and can be done in any order. Task 10 depends on all others.
 
 ## Notes
 
-1. **Contract prefix verification:** The spec notes that MYM/MGC/MCL/MBT prefixes need verification against TopstepX API. The build phase should use `searchContracts()` to validate prefixes if possible, but the prefixes listed in the spec are reasonable defaults.
-2. **Monthly expiry:** MGC, MCL, and MBT use monthly expiry cycles, not quarterly. This is the most significant logic change in `getCurrentContractId()`.
-3. **No database migration needed:** All existing tables support multi-symbol data via the `symbol` column.
-4. **`bot_sessions` table deferred:** The spec mentions it as optional ("Consider"). We skip it for now — the CLI status display shows active symbols.
-5. **Quantity is per-symbol:** The current design uses the same `quantity` for all symbols. Per-symbol quantity could be a future enhancement but is not in scope for this issue.
+1. **No code changes needed to source files** (except AlertsTable.tsx for the pre-existing useTick bug). All CONTRACT_SPECS expansion, client.ts quarterly_fjnv support, database migration, and scripts are already implemented.
+
+2. **The NG prefix change** from `CON.F.US.NG` to `CON.F.US.NGE` was a legitimate API-verified correction. The test was written before the verification pass and needs updating.
+
+3. **The AlertsTable useTick issue** is a pre-existing bug from Issue #8 (dashboard realtime fixes) — the fix was applied to PositionsTable and KpiCards but missed AlertsTable. Adding it follows the exact same pattern.
+
+4. **The ml-optimize-backtest.ts script** has a stale `EXTENDED_SPECS` object (line 47-51) with specs that are now in CONTRACT_SPECS. This is cosmetic — the script falls through to CONTRACT_SPECS first, so the extended specs are dead code. Not blocking, but could be cleaned up.
 
 ---
 
-BUILD COMPLETE - All phases implemented and validated
+BUILD COMPLETE — All tasks implemented
+
+### Additional Fix
+- Fixed LE (Live Cattle) `pointValue` from 40000 to 400 (was incorrectly set to contract size in lbs instead of dollar value per point; tickValue/tickSize = 10/0.025 = 400)

@@ -723,7 +723,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     name: 'Live Cattle',
     tickSize: 0.025,
     tickValue: 10.0,
-    pointValue: 40000.0,
+    pointValue: 400.0,
     contractIdPrefix: 'CON.F.US.GLE',
     marginDay: 500,
     marginOvernight: 1800,

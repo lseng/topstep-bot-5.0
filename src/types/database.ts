@@ -160,6 +160,47 @@ export interface Database {
           llm_confidence?: number | null;
         };
       };
+      bars_1m: {
+        Row: {
+          id: string;
+          symbol: string;
+          contract_id: string;
+          timestamp: string;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+          tick_count: number | null;
+          fetched_at: string;
+        };
+        Insert: {
+          id?: string;
+          symbol: string;
+          contract_id: string;
+          timestamp: string;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+          tick_count?: number | null;
+          fetched_at?: string;
+        };
+        Update: {
+          id?: string;
+          symbol?: string;
+          contract_id?: string;
+          timestamp?: string;
+          open?: number;
+          high?: number;
+          low?: number;
+          close?: number;
+          volume?: number;
+          tick_count?: number | null;
+          fetched_at?: string;
+        };
+      };
       trades_log: {
         Row: {
           id: string;
@@ -259,6 +300,10 @@ export type AlertUpdate = Database['public']['Tables']['alerts']['Update'];
 export type PositionRow = Database['public']['Tables']['positions']['Row'];
 export type PositionInsert = Database['public']['Tables']['positions']['Insert'];
 export type PositionUpdate = Database['public']['Tables']['positions']['Update'];
+
+// Helper types for bars_1m
+export type Bars1mRow = Database['public']['Tables']['bars_1m']['Row'];
+export type Bars1mInsert = Database['public']['Tables']['bars_1m']['Insert'];
 
 // Helper types for trades_log
 export type TradesLogRow = Database['public']['Tables']['trades_log']['Row'];

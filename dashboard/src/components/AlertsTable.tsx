@@ -19,7 +19,6 @@ import { StatusBadge } from '@dashboard/components/StatusBadge';
 import { ActionBadge } from '@dashboard/components/ActionBadge';
 import { AlertDetailPanel } from '@dashboard/components/AlertDetailPanel';
 import { ChevronDown, ChevronRight, ArrowUpDown } from 'lucide-react';
-import { useTick } from '@dashboard/hooks/useTick';
 
 interface AlertRow {
   id: string;
@@ -42,16 +41,26 @@ interface AlertsTableProps {
   onSortingChange: (sorting: SortingState) => void;
 }
 
-function formatRelativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
+function formatTime12h(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const hours = d.getHours();
+  const h12 = hours % 12 || 12;
+  const ampm = hours < 12 ? 'AM' : 'PM';
+  const hh = h12.toString();
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  const ss = d.getSeconds().toString().padStart(2, '0');
+
+  // Show date prefix if not today
+  const isToday =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+
+  if (isToday) {
+    return `${hh}:${mm}:${ss} ${ampm}`;
+  }
+  return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}:${ss} ${ampm}`;
 }
 
 function extractOHLCV(raw: Record<string, unknown>) {
@@ -97,7 +106,7 @@ const columns: ColumnDef<AlertRow>[] = [
     ),
     cell: ({ getValue }) => (
       <span className="text-muted-foreground font-mono text-xs">
-        {formatRelativeTime(getValue<string>())}
+        {formatTime12h(getValue<string>())}
       </span>
     ),
   },
@@ -187,7 +196,11 @@ function ExpandedRow({ row }: { row: Row<AlertRow> }) {
   const ohlcv = extractOHLCV(raw);
   const vpvr = extractVPVR(raw);
   const interval = typeof raw.interval === 'string' ? raw.interval : undefined;
-  const alertTime = typeof raw.alertTime === 'string' ? raw.alertTime : undefined;
+  // TradingView payload uses "time", fallback to "alertTime" or created_at
+  const alertTime =
+    (typeof raw.time === 'string' ? raw.time : undefined) ??
+    (typeof raw.alertTime === 'string' ? raw.alertTime : undefined) ??
+    alert.created_at;
 
   return (
     <AlertDetailPanel
@@ -198,6 +211,9 @@ function ExpandedRow({ row }: { row: Row<AlertRow> }) {
       comment={alert.comment}
       orderId={alert.order_id}
       status={alert.status}
+      symbol={alert.symbol}
+      action={alert.action}
+      price={alert.price}
     />
   );
 }
@@ -207,7 +223,6 @@ export function AlertsTable({
   sorting,
   onSortingChange,
 }: AlertsTableProps) {
-  useTick();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const table = useReactTable({

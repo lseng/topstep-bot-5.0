@@ -24,6 +24,9 @@ interface AlertDetailPanelProps {
   comment?: string | null;
   orderId?: string | null;
   status: string;
+  symbol?: string;
+  action?: string;
+  price?: number | null;
 }
 
 function formatNumber(val: number | null | undefined): string {
@@ -42,7 +45,12 @@ export function AlertDetailPanel({
   comment,
   orderId,
   status,
+  symbol,
+  action,
+  price,
 }: AlertDetailPanelProps) {
+  const hasOhlcv = ohlcv && (ohlcv.open != null || ohlcv.high != null);
+
   return (
     <div className="grid gap-4 md:grid-cols-2 p-4">
       <Card>
@@ -50,7 +58,7 @@ export function AlertDetailPanel({
           <CardTitle className="text-sm">Alert Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          {ohlcv && (
+          {hasOhlcv ? (
             <div className="grid grid-cols-5 gap-2">
               <div>
                 <span className="text-muted-foreground">O</span>
@@ -74,6 +82,27 @@ export function AlertDetailPanel({
                   {ohlcv.volume != null ? ohlcv.volume.toLocaleString() : '—'}
                 </div>
               </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {symbol && (
+                <div>
+                  <span className="text-muted-foreground">Symbol: </span>
+                  <span className="font-mono font-semibold">{symbol}</span>
+                </div>
+              )}
+              {action && (
+                <div>
+                  <span className="text-muted-foreground">Action: </span>
+                  <span className="font-mono">{action.toUpperCase()}</span>
+                </div>
+              )}
+              {price != null && (
+                <div>
+                  <span className="text-muted-foreground">Price: </span>
+                  <span className="font-mono">{formatNumber(price)}</span>
+                </div>
+              )}
             </div>
           )}
           {interval && (

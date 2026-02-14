@@ -43,8 +43,8 @@ Enable the bot to trade multiple symbols simultaneously on a single TopstepX con
 | Bot CLI | `src/bot/cli.ts:38` | `--symbol` flag (singular), resolves 1 contract |
 | BotRunner | `src/bot/runner.ts` | Creates 1 PositionManager, subscribes 1 contract, hardcodes `this.config.symbol` in quote handler (line 146) |
 | PositionManager | `src/bot/position-manager.ts` | Config has single `symbol`/`contractId`; `updateUnrealizedPnl` (line 343) and `buildTradeResult` (line 354) use `this.config.symbol` instead of `position.symbol`; `calculateEntryPrice` call (line 110) uses `this.config.symbol` |
-| CONTRACT_SPECS | `src/services/topstepx/types.ts:269-306` | Only has ES, NQ, MES, MNQ — missing MYM, MGC, MCL, MBT |
-| getCurrentContractId | `src/services/topstepx/client.ts:204-233` | Hardcodes quarterly expiry cycle — MYM is quarterly but MGC, MCL, MBT use monthly |
+| ~~CONTRACT_SPECS~~ | `src/services/topstepx/types.ts:270-790` | **DONE** — All 51 Topstep tradable symbols added with API-verified contract ID prefixes and tick sizes. Supports `quarterly`, `monthly`, and `quarterly_fjnv` expiry cycles. |
+| ~~getCurrentContractId~~ | `src/services/topstepx/client.ts:205-239` | **DONE** — Supports `quarterly` (HMUZ), `monthly`, and `quarterly_fjnv` (Jan/Apr/Jul/Oct) expiry cycles. |
 | Backtest CLI | `src/bot/backtest/cli.ts` | Single `--symbol` flag |
 | BacktestConfig | `src/bot/backtest/types.ts:6-19` | `symbol: string` (singular) |
 | Backtest engine | `src/bot/backtest/engine.ts:34` | `.eq('symbol', config.symbol)` — single symbol filter |
@@ -58,9 +58,9 @@ Enable the bot to trade multiple symbols simultaneously on a single TopstepX con
 
 ### Phase 1: Contract Specs & Resolution (Foundation)
 
-- [x] **1.1** Add CONTRACT_SPECS entries for MYM, MGC, MCL, MBT in `src/services/topstepx/types.ts` — `CONTRACT_SPECS` Record. Add 4 new entries with correct `name`, `tickSize`, `tickValue`, `pointValue`, `contractIdPrefix`, `marginDay`, `marginOvernight`. Values from spec: MYM (tick 1.0, tickValue $0.50, prefix `CON.F.US.MYM`), MGC (tick 0.10, tickValue $1.00, prefix `CON.F.US.MGC`), MCL (tick 0.01, tickValue $1.00, prefix `CON.F.US.MCL`), MBT (tick 5.0, tickValue $0.50, prefix `CON.F.CME.MBT`). Calculate `pointValue` from `tickValue / tickSize`. — LOW complexity
+- [x] **1.1** Add CONTRACT_SPECS for all 51 Topstep tradable symbols in `src/services/topstepx/types.ts`. All contract ID prefixes verified against TopstepX `searchContracts` API. Tick sizes and values confirmed from API data. 30 prefix corrections applied (e.g. 6A→DA6, GC→GCE, ZN→TYA). 722,792 bars of 1M data fetched and stored in Supabase `bars_1m` table across 35 symbols.
 
-- [x] **1.2** Refactor `getCurrentContractId()` in `src/services/topstepx/client.ts:204-233` to support both quarterly AND monthly expiry cycles. Currently hardcodes `expiryMonths = [3, 6, 9, 12]`. Add per-symbol expiry configuration: MES/MNQ/MYM use quarterly (H/M/U/Z), MGC/MCL/MBT use monthly (every month). Add an `expiryCycle` field to `ContractSpec` (`'quarterly' | 'monthly'`) and use it in the function. — MEDIUM complexity
+- [x] **1.2** Refactor `getCurrentContractId()` to support `quarterly` (HMUZ), `monthly`, and `quarterly_fjnv` (Jan/Apr/Jul/Oct for Platinum) expiry cycles. `expiryCycle` field on `ContractSpec` type drives contract month resolution.
 
 - [x] **1.3** Add unit tests for new contract specs and expiry resolution in `tests/contract-specs.test.ts`. Test that `getCurrentContractId('MYM')`, `getCurrentContractId('MGC')`, `getCurrentContractId('MCL')`, `getCurrentContractId('MBT')` return valid contract IDs with correct prefixes. Test monthly vs quarterly rollover logic. — LOW complexity
 

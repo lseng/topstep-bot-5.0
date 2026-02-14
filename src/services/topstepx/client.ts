@@ -213,7 +213,9 @@ export function getCurrentContractId(symbol = 'ES'): string {
   const expiryMonths =
     spec.expiryCycle === 'monthly'
       ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-      : [3, 6, 9, 12];
+      : spec.expiryCycle === 'quarterly_fjnv'
+        ? [1, 4, 7, 10]
+        : [3, 6, 9, 12];
 
   let expiryMonth: number;
 

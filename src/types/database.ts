@@ -201,6 +201,52 @@ export interface Database {
           fetched_at?: string;
         };
       };
+      sfx_algo_alerts: {
+        Row: {
+          id: string;
+          created_at: string;
+          source: string | null;
+          raw_body: string;
+          content_type: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          source?: string | null;
+          raw_body: string;
+          content_type?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          source?: string | null;
+          raw_body?: string;
+          content_type?: string | null;
+        };
+      };
+      informational_events: {
+        Row: {
+          id: string;
+          created_at: string;
+          source: string | null;
+          raw_body: string;
+          content_type: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          source?: string | null;
+          raw_body: string;
+          content_type?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          source?: string | null;
+          raw_body?: string;
+          content_type?: string | null;
+        };
+      };
       trades_log: {
         Row: {
           id: string;
@@ -308,3 +354,11 @@ export type Bars1mInsert = Database['public']['Tables']['bars_1m']['Insert'];
 // Helper types for trades_log
 export type TradesLogRow = Database['public']['Tables']['trades_log']['Row'];
 export type TradesLogInsert = Database['public']['Tables']['trades_log']['Insert'];
+
+// Helper types for sfx_algo_alerts
+export type SfxAlgoAlertRow = Database['public']['Tables']['sfx_algo_alerts']['Row'];
+export type SfxAlgoAlertInsert = Database['public']['Tables']['sfx_algo_alerts']['Insert'];
+
+// Helper types for informational_events
+export type InformationalEventRow = Database['public']['Tables']['informational_events']['Row'];
+export type InformationalEventInsert = Database['public']['Tables']['informational_events']['Insert'];

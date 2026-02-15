@@ -293,6 +293,24 @@ export interface AlertsResponse {
 }
 
 /**
+ * Response for GET /api/sfx-algo-alerts
+ */
+export interface SfxAlgoAlertsResponse {
+  success: true;
+  data: import('./database').SfxAlgoAlertRow[];
+  pagination: PaginationMeta;
+}
+
+/**
+ * Response for GET /api/informational-events
+ */
+export interface InformationalEventsResponse {
+  success: true;
+  data: import('./database').InformationalEventRow[];
+  pagination: PaginationMeta;
+}
+
+/**
  * Response for GET /api/alerts/[id]
  */
 export interface AlertDetailResponse {

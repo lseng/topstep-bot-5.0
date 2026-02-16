@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabase } from '../src/lib/supabase';
 import type { SfxAlgoAlertsResponse, PaginationMeta } from '../src/types';
 
-const VALID_SORT_COLUMNS = ['created_at', 'source'];
+const VALID_SORT_COLUMNS = ['created_at', 'source', 'symbol', 'alert_type', 'signal_direction', 'price'];
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== 'GET') {
@@ -13,6 +13,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '25'), 10) || 25));
   const source = req.query.source ? String(req.query.source) : undefined;
+  const symbol = req.query.symbol ? String(req.query.symbol) : undefined;
+  const alertType = req.query.alert_type ? String(req.query.alert_type) : undefined;
+  const signalDirection = req.query.signal_direction ? String(req.query.signal_direction) : undefined;
   const sort = req.query.sort ? String(req.query.sort) : 'created_at';
   const order = req.query.order === 'asc' ? 'asc' : 'desc';
   const from = req.query.from ? String(req.query.from) : undefined;
@@ -39,6 +42,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   try {
     let countQuery = getSupabase().from('sfx_algo_alerts').select('*', { count: 'exact', head: true });
     if (source) countQuery = countQuery.eq('source', source);
+    if (symbol) countQuery = countQuery.eq('symbol', symbol);
+    if (alertType) countQuery = countQuery.eq('alert_type', alertType);
+    if (signalDirection) countQuery = countQuery.eq('signal_direction', signalDirection);
     if (from) countQuery = countQuery.gte('created_at', from);
     if (to) countQuery = countQuery.lte('created_at', to);
 
@@ -59,6 +65,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       .range(offset, offset + limit - 1);
 
     if (source) dataQuery = dataQuery.eq('source', source);
+    if (symbol) dataQuery = dataQuery.eq('symbol', symbol);
+    if (alertType) dataQuery = dataQuery.eq('alert_type', alertType);
+    if (signalDirection) dataQuery = dataQuery.eq('signal_direction', signalDirection);
     if (from) dataQuery = dataQuery.gte('created_at', from);
     if (to) dataQuery = dataQuery.lte('created_at', to);
 

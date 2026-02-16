@@ -3,7 +3,7 @@
 import { EventEmitter } from 'events';
 import type { AlertRow } from '../types/database';
 import type { VpvrResult } from '../services/vpvr/types';
-import type { ManagedPosition, PositionState, PositionSide, TradeResult } from './types';
+import type { ManagedPosition, PositionState, PositionSide, TradeResult, SfxTpLevels } from './types';
 import type { EntryCalculation } from './entry-calculator';
 import { calculateEntryPrice, calculateRetryEntryLevels, calculateSlFromEntry } from './entry-calculator';
 import { evaluateTrailingStop } from './trailing-stop';
@@ -102,8 +102,9 @@ export class PositionManager extends EventEmitter {
 
   /**
    * Handle a new alert. Creates a pending_entry or cancels/closes existing positions.
+   * When sfxTpLevels are provided, they override VPVR-calculated TP levels.
    */
-  onAlert(alert: AlertRow, vpvr: VpvrResult, confirmationScore?: number): void {
+  onAlert(alert: AlertRow, vpvr: VpvrResult, confirmationScore?: number, sfxTpLevels?: SfxTpLevels): void {
     const { symbol, action } = alert;
 
     // Close actions → close existing position (cancels any pending retry)
@@ -163,6 +164,16 @@ export class PositionManager extends EventEmitter {
     // Calculate retry entry levels for the full ladder
     const retryLevels = calculateRetryEntryLevels(newSide, vpvr, this.config.maxRetries);
 
+    // Override VPVR TPs and SL with SFX levels when available
+    if (sfxTpLevels) {
+      entry.tp1 = sfxTpLevels.tp1;
+      entry.tp2 = sfxTpLevels.tp2;
+      entry.tp3 = sfxTpLevels.tp3;
+      if (sfxTpLevels.stopLoss != null) {
+        entry.initialSl = sfxTpLevels.stopLoss;
+      }
+    }
+
     // Create new managed position
     const position = this.createPosition(alert, vpvr, entry, newSide, retryLevels, confirmationScore);
     this.positions.set(symbol, position);
@@ -198,7 +209,8 @@ export class PositionManager extends EventEmitter {
     position.dirty = true;
 
     // Recalculate SL from actual fill price when using tick buffer
-    if (this.config.slBufferTicks > 0) {
+    // Skip for SFX positions — they use the absolute SL from the SFX signal
+    if (this.config.slBufferTicks > 0 && position.strategy !== 'sfx-algo') {
       const newSl = calculateSlFromEntry(
         fillPrice, position.side, position.symbol, this.config.slBufferTicks,
       );

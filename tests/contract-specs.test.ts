@@ -219,34 +219,36 @@ describe('getCurrentContractId', () => {
   });
 
   describe('monthly symbols', () => {
-    it('MGC uses monthly expiry - returns current month before rollover', () => {
-      mockDate(2026, 2, 10); // Feb 10 → current month Feb
+    // Monthly contracts use delivery-month naming: the contract actively
+    // trading in month N is named for month N+1 delivery.
+    it('MGC uses monthly expiry - delivery month is current+1 before rollover', () => {
+      mockDate(2026, 2, 10); // Feb 10 → trading Feb contract → delivery = Mar
       const id = getCurrentContractId('MGC');
-      expect(id).toBe('CON.F.US.MGC.G26'); // G = Feb
+      expect(id).toBe('CON.F.US.MGC.H26'); // H = Mar (delivery month)
     });
 
-    it('MCL rolls to next month after day 19', () => {
-      mockDate(2026, 2, 20); // Feb 20 → rolled, next = Mar
+    it('MCL rolls to next month after day 19 (with delivery offset)', () => {
+      mockDate(2026, 2, 20); // Feb 20 → rolled to Mar contract → delivery = Apr
       const id = getCurrentContractId('MCL');
-      expect(id).toBe('CON.F.US.MCLE.H26'); // H = Mar
+      expect(id).toBe('CON.F.US.MCLE.J26'); // J = Apr (delivery month)
     });
 
     it('MBT uses correct prefix (CME)', () => {
-      mockDate(2026, 5, 10); // May 10 → current month May
+      mockDate(2026, 5, 10); // May 10 → trading May contract → delivery = Jun
       const id = getCurrentContractId('MBT');
-      expect(id).toBe('CON.F.US.MBT.K26'); // K = May
+      expect(id).toBe('CON.F.US.MBT.M26'); // M = Jun (delivery month)
     });
 
-    it('monthly rolls to Jan of next year from Dec after rollover', () => {
-      mockDate(2026, 12, 20); // Dec 20 → rolled, next = Jan 2027
+    it('monthly rolls to Feb of next year from Dec after rollover', () => {
+      mockDate(2026, 12, 20); // Dec 20 → rolled to Jan 2027 → delivery = Feb 2027
       const id = getCurrentContractId('MGC');
-      expect(id).toBe('CON.F.US.MGC.F27'); // F = Jan
+      expect(id).toBe('CON.F.US.MGC.G27'); // G = Feb (delivery month)
     });
 
-    it('monthly stays in Dec before rollover', () => {
-      mockDate(2026, 12, 15); // Dec 15 → still Dec
+    it('monthly stays in Jan delivery before rollover in Dec', () => {
+      mockDate(2026, 12, 15); // Dec 15 → trading Dec contract → delivery = Jan 2027
       const id = getCurrentContractId('MGC');
-      expect(id).toBe('CON.F.US.MGC.Z26'); // Z = Dec
+      expect(id).toBe('CON.F.US.MGC.F27'); // F = Jan (delivery month)
     });
   });
 

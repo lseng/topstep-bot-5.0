@@ -15,20 +15,17 @@ import { useAlerts } from '@dashboard/hooks/useAlerts';
 import { usePositions } from '@dashboard/hooks/usePositions';
 import { useTradeLog } from '@dashboard/hooks/useTradeLog';
 import { useSfxAlgoAlerts } from '@dashboard/hooks/useSfxAlgoAlerts';
-import { useInformationalEvents } from '@dashboard/hooks/useInformationalEvents';
 import { useRealtimeAlerts } from '@dashboard/hooks/useRealtimeAlerts';
 import { useRealtimePositions } from '@dashboard/hooks/useRealtimePositions';
 import { useRealtimeSfxAlgo } from '@dashboard/hooks/useRealtimeSfxAlgo';
-import { useRealtimeInformational } from '@dashboard/hooks/useRealtimeInformational';
 
-type TabId = 'alerts' | 'positions' | 'trades' | 'sfx-algo' | 'informational';
+type TabId = 'alerts' | 'positions' | 'trades' | 'sfx-algo';
 
 export function App() {
   const { user, isLoading: authLoading, signIn, signOut } = useAuth();
   const { isConnected: alertsConnected } = useRealtimeAlerts();
   const { isConnected: positionsConnected } = useRealtimePositions();
   useRealtimeSfxAlgo();
-  useRealtimeInformational();
   const isConnected = alertsConnected || positionsConnected;
 
   const [activeTab, setActiveTab] = useState<TabId>('alerts');
@@ -70,13 +67,7 @@ export function App() {
   const [sfxAlgoSorting, setSfxAlgoSorting] = useState<SortingState>([
     { id: 'created_at', desc: true },
   ]);
-
-  // Informational state
-  const [infoPage, setInfoPage] = useState(1);
-  const [infoLimit, setInfoLimit] = useState(25);
-  const [infoSorting, setInfoSorting] = useState<SortingState>([
-    { id: 'created_at', desc: true },
-  ]);
+  const [sfxAlgoSymbolFilter, setSfxAlgoSymbolFilter] = useState('');
 
   const alertsSortColumn = alertsSorting[0]?.id ?? 'created_at';
   const alertsSortOrder = alertsSorting[0]?.desc ? 'desc' : 'asc';
@@ -86,8 +77,6 @@ export function App() {
   const tradesSortOrder = tradesSorting[0]?.desc ? 'desc' : 'asc';
   const sfxAlgoSortColumn = sfxAlgoSorting[0]?.id ?? 'created_at';
   const sfxAlgoSortOrder = sfxAlgoSorting[0]?.desc ? 'desc' : 'asc';
-  const infoSortColumn = infoSorting[0]?.id ?? 'created_at';
-  const infoSortOrder = infoSorting[0]?.desc ? 'desc' : 'asc';
 
   const { data: alertsData, isLoading: alertsLoading } = useAlerts({
     page: alertsPage,
@@ -121,15 +110,9 @@ export function App() {
   const { data: sfxAlgoData, isLoading: sfxAlgoLoading } = useSfxAlgoAlerts({
     page: sfxAlgoPage,
     limit: sfxAlgoLimit,
+    symbol: sfxAlgoSymbolFilter || undefined,
     sort: sfxAlgoSortColumn,
     order: sfxAlgoSortOrder,
-  });
-
-  const { data: infoData, isLoading: infoLoading } = useInformationalEvents({
-    page: infoPage,
-    limit: infoLimit,
-    sort: infoSortColumn,
-    order: infoSortOrder,
   });
 
   const alerts = alertsData?.data ?? [];
@@ -140,16 +123,15 @@ export function App() {
   const tradesPagination = tradesData?.pagination ?? { page: 1, limit: 25, total: 0, totalPages: 0 };
   const sfxAlgoAlerts = sfxAlgoData?.data ?? [];
   const sfxAlgoPagination = sfxAlgoData?.pagination ?? { page: 1, limit: 25, total: 0, totalPages: 0 };
-  const infoEvents = infoData?.data ?? [];
-  const infoPagination = infoData?.pagination ?? { page: 1, limit: 25, total: 0, totalPages: 0 };
 
   const symbols = useMemo(() => {
     const set = new Set<string>();
     alerts.forEach((a) => set.add(a.symbol));
     positions.forEach((p) => set.add(p.symbol));
     trades.forEach((t) => set.add(t.symbol));
+    sfxAlgoAlerts.forEach((s) => { if (s.symbol) set.add(s.symbol); });
     return Array.from(set).sort();
-  }, [alerts, positions, trades]);
+  }, [alerts, positions, trades, sfxAlgoAlerts]);
 
   const kpiStats = useMemo(() => {
     const total = alertsPagination.total;
@@ -202,7 +184,6 @@ export function App() {
     { id: 'positions', label: 'Positions' },
     { id: 'trades', label: 'Trade Log' },
     { id: 'sfx-algo', label: 'SFX Algo' },
-    { id: 'informational', label: 'Informational' },
   ];
 
   return (
@@ -326,6 +307,11 @@ export function App() {
         {/* SFX Algo Tab */}
         {activeTab === 'sfx-algo' && (
           <>
+            <SymbolFilter
+              value={sfxAlgoSymbolFilter}
+              symbols={symbols}
+              onChange={(v) => { setSfxAlgoSymbolFilter(v); setSfxAlgoPage(1); }}
+            />
             {sfxAlgoLoading ? (
               <div className="h-64 flex items-center justify-center">
                 <p className="text-muted-foreground">Loading SFX Algo alerts...</p>
@@ -351,33 +337,6 @@ export function App() {
           </>
         )}
 
-        {/* Informational Tab */}
-        {activeTab === 'informational' && (
-          <>
-            {infoLoading ? (
-              <div className="h-64 flex items-center justify-center">
-                <p className="text-muted-foreground">Loading informational events...</p>
-              </div>
-            ) : (
-              <>
-                <RawEventsTable
-                  data={infoEvents}
-                  sorting={infoSorting}
-                  onSortingChange={setInfoSorting}
-                  emptyMessage="No informational events found."
-                />
-                <Pagination
-                  page={infoPagination.page}
-                  totalPages={infoPagination.totalPages}
-                  total={infoPagination.total}
-                  limit={infoPagination.limit}
-                  onPageChange={setInfoPage}
-                  onLimitChange={(l) => { setInfoLimit(l); setInfoPage(1); }}
-                />
-              </>
-            )}
-          </>
-        )}
       </div>
     </DashboardLayout>
   );

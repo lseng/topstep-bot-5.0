@@ -6,6 +6,18 @@ interface SfxAlgoAlertRow {
   source: string | null;
   raw_body: string;
   content_type: string | null;
+  ticker: string | null;
+  symbol: string | null;
+  alert_type: string | null;
+  signal_direction: string | null;
+  price: number | null;
+  current_rating: number | null;
+  tp1: number | null;
+  tp2: number | null;
+  tp3: number | null;
+  stop_loss: number | null;
+  entry_price: number | null;
+  unix_time: number | null;
 }
 
 interface PaginationMeta {
@@ -25,6 +37,9 @@ interface UseSfxAlgoAlertsParams {
   page?: number;
   limit?: number;
   source?: string;
+  symbol?: string;
+  alert_type?: string;
+  signal_direction?: string;
   sort?: string;
   order?: 'asc' | 'desc';
   from?: string;

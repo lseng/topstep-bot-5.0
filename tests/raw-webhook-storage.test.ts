@@ -58,25 +58,6 @@ describe('saveRawWebhook', () => {
     });
   });
 
-  it('inserts into informational_events with correct fields and returns UUID', async () => {
-    const eventId = 'test-uuid-002';
-    mockSingle.mockResolvedValue({ data: { id: eventId }, error: null });
-
-    const result = await saveRawWebhook('informational_events', {
-      source: 'informational',
-      rawBody: '{"type":"BOS","symbol":"ES"}',
-      contentType: 'application/json',
-    });
-
-    expect(result).toBe(eventId);
-    expect(mockFrom).toHaveBeenCalledWith('informational_events');
-    expect(mockInsert).toHaveBeenCalledWith({
-      source: 'informational',
-      raw_body: '{"type":"BOS","symbol":"ES"}',
-      content_type: 'application/json',
-    });
-  });
-
   it('handles null content_type', async () => {
     mockSingle.mockResolvedValue({ data: { id: 'test-uuid-003' }, error: null });
 

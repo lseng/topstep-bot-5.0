@@ -86,18 +86,29 @@ export interface ManagedPosition {
   strategy: string;
 }
 
+/** SFX algo levels extracted from an alert row */
+export interface SfxTpLevels {
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  /** Absolute stop loss price from SFX signal */
+  stopLoss?: number;
+}
+
 /** Per-account strategy configuration for multi-account routing */
 export interface AccountStrategyConfig {
   /** TopstepX account ID */
   accountId: number;
-  /** Alert name to match from TradingView webhook (e.g. 'day-trader-medium-term-13') */
-  alertName: string;
+  /** Alert name to match from TradingView webhook (e.g. 'day-trader-medium-term-13'). Optional for SFX mode. */
+  alertName?: string;
   /** Fixed stop-loss buffer in ticks (overrides global default) */
   slBufferTicks: number;
   /** Maximum re-entry attempts per signal after SL hit (overrides global default) */
   maxRetries: number;
   /** Maximum contracts allowed across all symbols in micro-equivalent units */
   maxContracts: number;
+  /** Per-account symbol filter. If set, only alerts for these symbols are routed here. */
+  symbols?: string[];
 }
 
 /** Bot configuration */

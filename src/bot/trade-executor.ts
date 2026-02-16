@@ -7,9 +7,15 @@ import {
   closePosition,
   getCurrentContractId,
 } from '../services/topstepx/client';
-import { OrderSide, OrderTypeNum } from '../services/topstepx/types';
+import { OrderSide, OrderTypeNum, CONTRACT_SPECS } from '../services/topstepx/types';
 import type { PlaceOrderResponse } from '../services/topstepx/types';
 import type { PositionSide } from './types';
+
+/** Round a price to the nearest valid tick size for a contract */
+function roundToTick(price: number, symbol: string): number {
+  const tickSize = CONTRACT_SPECS[symbol.toUpperCase()]?.tickSize ?? 0.25;
+  return Math.round(price / tickSize) * tickSize;
+}
 
 export class TradeExecutor {
   private dryRun: boolean;
@@ -30,6 +36,7 @@ export class TradeExecutor {
   ): Promise<PlaceOrderResponse> {
     const contractId = getCurrentContractId(symbol);
     const orderSide = side === 'long' ? OrderSide.BUY : OrderSide.SELL;
+    const alignedPrice = roundToTick(price, symbol);
 
     if (this.dryRun) {
       logger.info('[DRY-RUN] Would place limit entry', {
@@ -42,14 +49,15 @@ export class TradeExecutor {
       return { success: true, orderId: -1, errorCode: 0, errorMessage: null };
     }
 
+    const customTag = `BOT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     return placeOrder({
       accountId,
       contractId,
       type: OrderTypeNum.LIMIT,
       side: orderSide,
       size: quantity,
-      limitPrice: price,
-      customTag: 'BOT',
+      limitPrice: alignedPrice,
+      customTag,
     });
   }
 

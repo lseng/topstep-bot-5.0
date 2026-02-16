@@ -175,14 +175,12 @@ describe('Dynamic Symbol Handling', () => {
     it('resolves contract dynamically when alert arrives for known symbol', async () => {
       await runner.start();
 
-      // The alert listener emits 'newAlert' event which triggers dynamic resolution
-      // We simulate this by checking that getCurrentContractId would be called
+      // The alert listener emits 'newAlert' event with SfxEnrichedAlert shape
       const alert = makeAlert({ symbol: 'MES' });
 
-      // Emit the alert via the alert listener
-      // We need to access the internal alert listener
-      const alertListener = (runner as unknown as { alertListener: { emit: (event: string, data: AlertRow) => void } }).alertListener;
-      alertListener.emit('newAlert', alert);
+      // Emit the alert via the alert listener (now expects { alert, sfxTpLevels })
+      const alertListener = (runner as unknown as { alertListener: { emit: (event: string, data: unknown) => void } }).alertListener;
+      alertListener.emit('newAlert', { alert, sfxTpLevels: undefined });
 
       // Wait for async processing
       await new Promise((r) => setTimeout(r, 50));
@@ -198,8 +196,8 @@ describe('Dynamic Symbol Handling', () => {
 
       const alert = makeAlert({ symbol: 'UNKNOWN_SYMBOL' });
 
-      const alertListener = (runner as unknown as { alertListener: { emit: (event: string, data: AlertRow) => void } }).alertListener;
-      alertListener.emit('newAlert', alert);
+      const alertListener = (runner as unknown as { alertListener: { emit: (event: string, data: unknown) => void } }).alertListener;
+      alertListener.emit('newAlert', { alert, sfxTpLevels: undefined });
 
       await new Promise((r) => setTimeout(r, 50));
 

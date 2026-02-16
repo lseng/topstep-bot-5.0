@@ -36,6 +36,9 @@ adws/.env
 # Test coverage
 coverage/
 
+# Local data
+data/
+
 # TypeScript cache
 *.tsbuildinfo
 .vercel

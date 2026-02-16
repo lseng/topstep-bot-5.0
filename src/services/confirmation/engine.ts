@@ -36,7 +36,7 @@ export async function fetchBars(
 
   return getHistoricalBars({
     contractId,
-    live: true,
+    live: false,
     startTime: startTime.toISOString(),
     endTime: now.toISOString(),
     unit: BarUnit.MINUTE,

@@ -36,7 +36,7 @@ describe('TradeExecutor', () => {
         side: OrderSide.BUY,
         size: 1,
         limitPrice: 5020,
-        customTag: 'BOT',
+        customTag: expect.stringMatching(/^BOT-\d+-[a-z0-9]+$/),
       });
     });
 

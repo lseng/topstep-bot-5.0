@@ -21,11 +21,15 @@ export interface TrailingStopResult {
  *   active: price >= TP1 → tp1_hit, SL = entry
  *   tp1_hit: price >= TP2 → tp2_hit, SL = TP1
  *   tp2_hit: price >= TP3 → tp3_hit, SL = TP2
+ *   tp3_hit: price >= TP3 + gap → trail SL at (price - gap)
  *
  * TP progression (short):
  *   active: price <= TP1 → tp1_hit, SL = entry
  *   tp1_hit: price <= TP2 → tp2_hit, SL = TP1
  *   tp2_hit: price <= TP3 → tp3_hit, SL = TP2
+ *   tp3_hit: price <= TP3 - gap → trail SL at (price + gap)
+ *
+ * Where gap = abs(TP3 - TP2) — the distance between TP2 and TP3.
  *
  * SL breach:
  *   long: price <= currentSl → close
@@ -101,6 +105,31 @@ export function evaluateTrailingStop(
         newSl: position.tp2Price, // Move SL to TP2
         shouldClose: false,
       };
+    }
+  }
+
+  // Beyond TP3: trail SL at (TP3-TP2) distance from current price
+  if (state === 'tp3_hit') {
+    const gap = Math.abs(position.tp3Price - position.tp2Price);
+
+    if (isLong) {
+      // Trail SL upward as price rises beyond TP3
+      const trailSl = currentPrice - gap;
+      if (trailSl > position.currentSl) {
+        return {
+          newSl: trailSl,
+          shouldClose: false,
+        };
+      }
+    } else {
+      // Trail SL downward as price falls beyond TP3
+      const trailSl = currentPrice + gap;
+      if (trailSl < position.currentSl) {
+        return {
+          newSl: trailSl,
+          shouldClose: false,
+        };
+      }
     }
   }
 

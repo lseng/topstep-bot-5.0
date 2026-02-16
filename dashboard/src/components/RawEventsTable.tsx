@@ -22,6 +22,18 @@ interface RawEventRow {
   source: string | null;
   raw_body: string;
   content_type: string | null;
+  ticker: string | null;
+  symbol: string | null;
+  alert_type: string | null;
+  signal_direction: string | null;
+  price: number | null;
+  current_rating: number | null;
+  tp1: number | null;
+  tp2: number | null;
+  tp3: number | null;
+  stop_loss: number | null;
+  entry_price: number | null;
+  unix_time: number | null;
 }
 
 interface RawEventsTableProps {
@@ -51,6 +63,20 @@ function formatTime12h(dateStr: string): string {
   }
   return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}:${ss} ${ampm}`;
 }
+
+function formatPrice(val: number | null): string {
+  if (val == null) return '---';
+  return val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+const alertTypeBadge: Record<string, string> = {
+  buy: 'bg-green-500/20 text-green-400',
+  sell: 'bg-red-500/20 text-red-400',
+  TP1: 'bg-blue-500/20 text-blue-400',
+  TP2: 'bg-blue-500/20 text-blue-400',
+  TP3: 'bg-blue-500/20 text-blue-400',
+  sl: 'bg-orange-500/20 text-orange-400',
+};
 
 const columns: ColumnDef<RawEventRow>[] = [
   {
@@ -88,22 +114,108 @@ const columns: ColumnDef<RawEventRow>[] = [
     ),
   },
   {
-    accessorKey: 'source',
-    header: 'Source',
+    accessorKey: 'symbol',
+    header: ({ column }) => (
+      <button
+        className="flex items-center gap-1 hover:text-foreground"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+      >
+        Symbol
+        <ArrowUpDown className="size-3" />
+      </button>
+    ),
     cell: ({ getValue }) => (
-      <span className="text-sm">{getValue<string | null>() ?? '---'}</span>
+      <span className="font-mono text-sm font-medium">{getValue<string | null>() ?? '---'}</span>
     ),
   },
   {
-    accessorKey: 'content_type',
-    header: 'Content Type',
+    accessorKey: 'alert_type',
+    header: ({ column }) => (
+      <button
+        className="flex items-center gap-1 hover:text-foreground"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+      >
+        Type
+        <ArrowUpDown className="size-3" />
+      </button>
+    ),
     cell: ({ getValue }) => {
-      const ct = getValue<string | null>();
+      const t = getValue<string | null>();
+      if (!t) return <span className="text-muted-foreground">---</span>;
+      const cls = alertTypeBadge[t] ?? 'bg-muted text-muted-foreground';
       return (
-        <span className="text-xs text-muted-foreground truncate max-w-[200px] block">
-          {ct ?? '---'}
+        <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
+          {t.toUpperCase()}
         </span>
       );
+    },
+  },
+  {
+    accessorKey: 'signal_direction',
+    header: 'Dir',
+    cell: ({ getValue }) => {
+      const d = getValue<string | null>();
+      if (!d) return <span className="text-muted-foreground">---</span>;
+      return (
+        <span className={`text-xs font-medium ${d === 'bull' ? 'text-green-400' : 'text-red-400'}`}>
+          {d === 'bull' ? 'BULL' : 'BEAR'}
+        </span>
+      );
+    },
+  },
+  {
+    accessorKey: 'price',
+    header: ({ column }) => (
+      <button
+        className="flex items-center gap-1 hover:text-foreground"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+      >
+        Price
+        <ArrowUpDown className="size-3" />
+      </button>
+    ),
+    cell: ({ getValue }) => (
+      <span className="font-mono text-xs">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    accessorKey: 'current_rating',
+    header: 'Rating',
+    cell: ({ getValue }) => {
+      const r = getValue<number | null>();
+      if (r == null) return <span className="text-muted-foreground">---</span>;
+      return <span className="font-mono text-xs">{r}</span>;
+    },
+  },
+  {
+    id: 'targets',
+    header: 'TP1 / TP2 / TP3',
+    cell: ({ row }) => {
+      const { tp1, tp2, tp3 } = row.original;
+      if (tp1 == null && tp2 == null && tp3 == null) return <span className="text-muted-foreground">---</span>;
+      return (
+        <span className="font-mono text-xs text-blue-400">
+          {formatPrice(tp1)} / {formatPrice(tp2)} / {formatPrice(tp3)}
+        </span>
+      );
+    },
+  },
+  {
+    accessorKey: 'stop_loss',
+    header: 'SL',
+    cell: ({ getValue }) => {
+      const sl = getValue<number | null>();
+      if (sl == null) return <span className="text-muted-foreground">---</span>;
+      return <span className="font-mono text-xs text-orange-400">{formatPrice(sl)}</span>;
+    },
+  },
+  {
+    accessorKey: 'entry_price',
+    header: 'Entry',
+    cell: ({ getValue }) => {
+      const ep = getValue<number | null>();
+      if (ep == null) return <span className="text-muted-foreground">---</span>;
+      return <span className="font-mono text-xs">{formatPrice(ep)}</span>;
     },
   },
 ];

@@ -208,6 +208,18 @@ export interface Database {
           source: string | null;
           raw_body: string;
           content_type: string | null;
+          ticker: string | null;
+          symbol: string | null;
+          alert_type: string | null;
+          signal_direction: string | null;
+          price: number | null;
+          current_rating: number | null;
+          tp1: number | null;
+          tp2: number | null;
+          tp3: number | null;
+          stop_loss: number | null;
+          entry_price: number | null;
+          unix_time: number | null;
         };
         Insert: {
           id?: string;
@@ -215,6 +227,18 @@ export interface Database {
           source?: string | null;
           raw_body: string;
           content_type?: string | null;
+          ticker?: string | null;
+          symbol?: string | null;
+          alert_type?: string | null;
+          signal_direction?: string | null;
+          price?: number | null;
+          current_rating?: number | null;
+          tp1?: number | null;
+          tp2?: number | null;
+          tp3?: number | null;
+          stop_loss?: number | null;
+          entry_price?: number | null;
+          unix_time?: number | null;
         };
         Update: {
           id?: string;
@@ -222,29 +246,18 @@ export interface Database {
           source?: string | null;
           raw_body?: string;
           content_type?: string | null;
-        };
-      };
-      informational_events: {
-        Row: {
-          id: string;
-          created_at: string;
-          source: string | null;
-          raw_body: string;
-          content_type: string | null;
-        };
-        Insert: {
-          id?: string;
-          created_at?: string;
-          source?: string | null;
-          raw_body: string;
-          content_type?: string | null;
-        };
-        Update: {
-          id?: string;
-          created_at?: string;
-          source?: string | null;
-          raw_body?: string;
-          content_type?: string | null;
+          ticker?: string | null;
+          symbol?: string | null;
+          alert_type?: string | null;
+          signal_direction?: string | null;
+          price?: number | null;
+          current_rating?: number | null;
+          tp1?: number | null;
+          tp2?: number | null;
+          tp3?: number | null;
+          stop_loss?: number | null;
+          entry_price?: number | null;
+          unix_time?: number | null;
         };
       };
       trades_log: {
@@ -359,6 +372,3 @@ export type TradesLogInsert = Database['public']['Tables']['trades_log']['Insert
 export type SfxAlgoAlertRow = Database['public']['Tables']['sfx_algo_alerts']['Row'];
 export type SfxAlgoAlertInsert = Database['public']['Tables']['sfx_algo_alerts']['Insert'];
 
-// Helper types for informational_events
-export type InformationalEventRow = Database['public']['Tables']['informational_events']['Row'];
-export type InformationalEventInsert = Database['public']['Tables']['informational_events']['Insert'];

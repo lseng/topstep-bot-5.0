@@ -4,8 +4,8 @@
 // ─── Order Enums (numeric values used by the API) ────────────────────────────
 
 export enum OrderSide {
-  SELL = 0,
-  BUY = 1,
+  BUY = 0,
+  SELL = 1,
 }
 
 export enum OrderTypeNum {
@@ -153,7 +153,7 @@ export interface Trade {
   price: number;
   profitAndLoss: number;
   fees: number;
-  side: number; // 0=SELL, 1=BUY
+  side: number; // 0=BUY, 1=SELL (matches OrderSide enum)
   size: number;
   voided: boolean;
   orderId: number;

@@ -1,5 +1,5 @@
 // E2E test suite for POST /api/webhook/sfx-algo endpoint
-// Tests the full raw webhook flow: request -> auth -> store -> respond
+// Tests the full webhook flow: request -> auth -> parse -> store -> respond
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -14,17 +14,42 @@ vi.mock('../../src/lib/logger', () => ({
   },
 }));
 
-const mockSaveRawWebhook = vi.fn<() => Promise<string>>();
-vi.mock('../../src/services/raw-webhook-storage', () => ({
-  saveRawWebhook: (...args: unknown[]) => mockSaveRawWebhook(...args),
+// Mock Supabase
+const mockInsert = vi.fn();
+const mockSelect = vi.fn();
+const mockSingle = vi.fn();
+const mockFrom = vi.fn(() => ({
+  insert: mockInsert.mockReturnValue({
+    select: mockSelect.mockReturnValue({
+      single: mockSingle,
+    }),
+  }),
+}));
+
+vi.mock('../../src/lib/supabase', () => ({
+  getSupabase: () => ({
+    from: mockFrom,
+  }),
 }));
 
 function createMockRequest(overrides: Partial<VercelRequest> = {}): VercelRequest {
   return {
     method: 'POST',
-    headers: { 'content-type': 'text/plain' },
+    headers: { 'content-type': 'application/json' },
     query: { secret: 'e2e-test-secret' },
-    body: 'S2 BUY ES 5800.25',
+    body: {
+      algorithm: 'SFX',
+      ticker: 'ES1!',
+      alert: 'buy',
+      signal_direction: 'bull',
+      close: 6877.75,
+      current_rating: '2',
+      tp1: '6878',
+      tp2: '6882.5',
+      tp3: '6887',
+      sl: '6859',
+      unix_time: 1771230000000,
+    },
     ...overrides,
   } as VercelRequest;
 }
@@ -54,7 +79,7 @@ function createMockResponse(): {
 describe('SFX Algo Webhook E2E Tests', () => {
   beforeEach(() => {
     process.env.WEBHOOK_SECRET = 'e2e-test-secret';
-    mockSaveRawWebhook.mockResolvedValue('e2e-sfx-uuid-001');
+    mockSingle.mockResolvedValue({ data: { id: 'e2e-sfx-uuid-001' }, error: null });
   });
 
   afterEach(() => {
@@ -63,8 +88,8 @@ describe('SFX Algo Webhook E2E Tests', () => {
   });
 
   describe('Full SFX Algo webhook flow', () => {
-    it('stores raw payload and returns success with eventId', async () => {
-      const req = createMockRequest({ body: 'S2 BUY ES 5800.25 TP:5810 SL:5795' });
+    it('stores parsed SFX payload and returns success with eventId', async () => {
+      const req = createMockRequest();
       const { res, getStatus, getData } = createMockResponse();
 
       await handler(req, res);
@@ -73,11 +98,15 @@ describe('SFX Algo Webhook E2E Tests', () => {
       const data = getData() as { success: boolean; eventId: string };
       expect(data.success).toBe(true);
       expect(data.eventId).toBe('e2e-sfx-uuid-001');
-      expect(mockSaveRawWebhook).toHaveBeenCalledWith('sfx_algo_alerts', {
-        source: 'sfx-algo',
-        rawBody: 'S2 BUY ES 5800.25 TP:5810 SL:5795',
-        contentType: 'text/plain',
-      });
+
+      expect(mockFrom).toHaveBeenCalledWith('sfx_algo_alerts');
+      const insertArg = mockInsert.mock.calls[0][0] as Record<string, unknown>;
+      expect(insertArg.symbol).toBe('ES');
+      expect(insertArg.alert_type).toBe('buy');
+      expect(insertArg.signal_direction).toBe('bull');
+      expect(insertArg.price).toBe(6877.75);
+      expect(insertArg.tp1).toBe(6878);
+      expect(insertArg.stop_loss).toBe(6859);
     });
 
     it('rejects requests without valid secret', async () => {
@@ -88,10 +117,10 @@ describe('SFX Algo Webhook E2E Tests', () => {
 
       expect(getStatus()).toBe(401);
       expect((getData() as { success: boolean }).success).toBe(false);
-      expect(mockSaveRawWebhook).not.toHaveBeenCalled();
+      expect(mockInsert).not.toHaveBeenCalled();
     });
 
-    it('handles text/plain content type', async () => {
+    it('handles plain text body (non-SFX) gracefully', async () => {
       const req = createMockRequest({
         headers: { 'content-type': 'text/plain' },
         body: 'raw pine script alert text',
@@ -101,46 +130,34 @@ describe('SFX Algo Webhook E2E Tests', () => {
       await handler(req, res);
 
       expect(getStatus()).toBe(200);
-      expect(mockSaveRawWebhook).toHaveBeenCalledWith('sfx_algo_alerts', {
-        source: 'sfx-algo',
-        rawBody: 'raw pine script alert text',
-        contentType: 'text/plain',
-      });
+      const insertArg = mockInsert.mock.calls[0][0] as Record<string, unknown>;
+      expect(insertArg.raw_body).toBe('raw pine script alert text');
+      expect(insertArg.ticker).toBeNull();
+      expect(insertArg.symbol).toBeNull();
     });
 
-    it('handles application/json content type', async () => {
-      const jsonBody = { signal: 'S1', action: 'sell', price: 5800 };
+    it('handles SFX exit alerts (TP/SL)', async () => {
       const req = createMockRequest({
-        headers: { 'content-type': 'application/json' },
-        body: jsonBody,
+        body: {
+          algorithm: 'SFX',
+          ticker: 'NQ1!',
+          alert: 'TP2',
+          signal_direction: 'bear',
+          close: 24600,
+          entry_price: '24700',
+          unix_time: 1771231000000,
+        },
       });
       const { res, getStatus } = createMockResponse();
 
       await handler(req, res);
 
       expect(getStatus()).toBe(200);
-      expect(mockSaveRawWebhook).toHaveBeenCalledWith('sfx_algo_alerts', {
-        source: 'sfx-algo',
-        rawBody: JSON.stringify(jsonBody),
-        contentType: 'application/json',
-      });
-    });
-
-    it('handles arbitrary content types', async () => {
-      const req = createMockRequest({
-        headers: { 'content-type': 'text/csv' },
-        body: 'ES,buy,1,5800.25',
-      });
-      const { res, getStatus } = createMockResponse();
-
-      await handler(req, res);
-
-      expect(getStatus()).toBe(200);
-      expect(mockSaveRawWebhook).toHaveBeenCalledWith('sfx_algo_alerts', {
-        source: 'sfx-algo',
-        rawBody: 'ES,buy,1,5800.25',
-        contentType: 'text/csv',
-      });
+      const insertArg = mockInsert.mock.calls[0][0] as Record<string, unknown>;
+      expect(insertArg.alert_type).toBe('TP2');
+      expect(insertArg.entry_price).toBe(24700);
+      expect(insertArg.tp1).toBeNull();
+      expect(insertArg.stop_loss).toBeNull();
     });
 
     it('responds within 3 seconds', async () => {

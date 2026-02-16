@@ -302,15 +302,6 @@ export interface SfxAlgoAlertsResponse {
 }
 
 /**
- * Response for GET /api/informational-events
- */
-export interface InformationalEventsResponse {
-  success: true;
-  data: import('./database').InformationalEventRow[];
-  pagination: PaginationMeta;
-}
-
-/**
  * Response for GET /api/alerts/[id]
  */
 export interface AlertDetailResponse {

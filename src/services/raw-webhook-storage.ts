@@ -3,7 +3,7 @@
 import { getSupabase } from '../lib/supabase';
 import { logger } from '../lib/logger';
 
-type RawWebhookTable = 'sfx_algo_alerts' | 'informational_events';
+type RawWebhookTable = 'sfx_algo_alerts';
 
 /**
  * Save a raw webhook payload to the specified table.

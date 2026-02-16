@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger';
 import {
   OrderSide,
   OrderTypeNum,
+  OrderStatusNum,
   CONTRACT_SPECS,
   EXPIRY_CODES,
   type AuthResponse,
@@ -234,6 +235,16 @@ export function getCurrentContractId(symbol = 'ES'): string {
     }
   }
 
+  // Monthly contracts use delivery-month naming: the contract actively trading
+  // in month N is named for month N+1 (e.g., CL March "H" trades in February)
+  if (spec.expiryCycle === 'monthly') {
+    expiryMonth += 1;
+    if (expiryMonth > 12) {
+      expiryMonth = 1;
+      year += 1;
+    }
+  }
+
   const expiryCode = EXPIRY_CODES[expiryMonth];
   const yearCode = String(year).slice(-2);
 
@@ -361,8 +372,122 @@ export async function closePosition(
     side,
     size: Math.abs(size),
     type: OrderTypeNum.MARKET,
-    customTag: 'BOT',
+    customTag: `BOT-CLOSE-${Date.now()}`,
   });
+}
+
+// ─── Flatten (startup cleanup) ───────────────────────────────────────────────
+
+/**
+ * Cancel all working orders for an account.
+ * Returns the number of orders cancelled.
+ */
+export async function cancelAllWorkingOrders(accountId: number): Promise<number> {
+  const startTimestamp = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  let cancelled = 0;
+
+  try {
+    const data = await apiPost<{ orders: Array<{ id: number; status: number; contractId: string; side: number; limitPrice: number | null }>; success: boolean }>('/Order/search', {
+      accountId,
+      startTimestamp,
+    });
+
+    if (!data.success || !data.orders) return 0;
+
+    const working = data.orders.filter((o) => o.status === (OrderStatusNum.OPEN as number));
+
+    for (const order of working) {
+      try {
+        const result = await cancelOrder({ orderId: order.id, accountId });
+        if (result) {
+          cancelled++;
+          const side = order.side === (OrderSide.BUY as number) ? 'BUY' : 'SELL';
+          logger.info('Flatten: cancelled working order', {
+            orderId: order.id, contractId: order.contractId, side, limitPrice: order.limitPrice,
+          });
+        }
+      } catch {
+        logger.warn('Flatten: failed to cancel order', { orderId: order.id });
+      }
+    }
+  } catch (err) {
+    logger.error('Flatten: order search failed', { error: err instanceof Error ? err.message : 'unknown' });
+  }
+
+  return cancelled;
+}
+
+/** Net position per contract calculated from trades */
+export interface NetPosition {
+  contractId: string;
+  size: number; // positive = long, negative = short
+}
+
+/**
+ * Calculate net positions from recent trades.
+ * Since Position/list endpoint is unavailable, this derives open positions from fills.
+ */
+export async function getNetPositionsFromTrades(accountId: number, daysBack = 7): Promise<NetPosition[]> {
+  const trades = await getTrades(accountId, daysBack);
+  const net = new Map<string, number>();
+
+  for (const trade of trades) {
+    const current = net.get(trade.contractId) ?? 0;
+    // BUY (side=0) adds size, SELL (side=1) subtracts size
+    const delta = trade.side === (OrderSide.BUY as number) ? trade.size : -trade.size;
+    net.set(trade.contractId, current + delta);
+  }
+
+  const positions: NetPosition[] = [];
+  for (const [contractId, size] of net.entries()) {
+    if (size !== 0) {
+      positions.push({ contractId, size });
+    }
+  }
+
+  return positions;
+}
+
+/**
+ * Flatten all positions for an account: cancel working orders, then market-close open positions.
+ * Returns { ordersCancelled, positionsClosed }.
+ */
+export async function flattenAccount(accountId: number): Promise<{ ordersCancelled: number; positionsClosed: number }> {
+  logger.info('Flatten: starting for account', { accountId });
+
+  // Step 1: Cancel all working orders
+  const ordersCancelled = await cancelAllWorkingOrders(accountId);
+
+  // Step 2: Calculate net positions from trades and close them
+  const netPositions = await getNetPositionsFromTrades(accountId);
+  let positionsClosed = 0;
+
+  for (const pos of netPositions) {
+    const isLong = pos.size > 0;
+    const size = Math.abs(pos.size);
+    const direction = isLong ? 'long' : 'short';
+
+    logger.info('Flatten: closing position', { contractId: pos.contractId, direction, size });
+
+    try {
+      const result = await closePosition(accountId, pos.contractId, size, isLong);
+      if (result.success) {
+        positionsClosed++;
+        logger.info('Flatten: position closed', { contractId: pos.contractId, orderId: result.orderId });
+      } else {
+        logger.warn('Flatten: close failed', {
+          contractId: pos.contractId, errorCode: result.errorCode, errorMessage: result.errorMessage,
+        });
+      }
+    } catch (err) {
+      logger.error('Flatten: close error', {
+        contractId: pos.contractId, error: err instanceof Error ? err.message : 'unknown',
+      });
+    }
+  }
+
+  logger.info('Flatten: complete', { accountId, ordersCancelled, positionsClosed });
+  return { ordersCancelled, positionsClosed };
 }
 
 // ─── Trades (Fills) ──────────────────────────────────────────────────────────

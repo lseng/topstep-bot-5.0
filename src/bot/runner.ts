@@ -1,26 +1,27 @@
 // Bot runner — main orchestrator wiring SignalR hubs, alert listener, position manager, executor, writer
-// Supports multi-account routing: alerts matched by name to account-strategy pairs
+// Supports multi-account routing: SFX alerts routed to accounts by symbol filter
 
 import { logger } from '../lib/logger';
 import { getSupabase } from '../lib/supabase';
-import { authenticate, getToken, getCurrentContractId, getPositions } from '../services/topstepx/client';
+import { authenticate, getToken, getCurrentContractId, getPositions, flattenAccount } from '../services/topstepx/client';
 import { UserHubConnection, MarketHubConnection } from '../services/topstepx/streaming';
 import { calculateVpvr } from '../services/vpvr/calculator';
 import { fetchBars } from '../services/confirmation/engine';
 import { OrderStatusNum, CONTRACT_SPECS } from '../services/topstepx/types';
 import type { GatewayOrderEvent, GatewayQuoteEvent, GatewayPositionEvent } from '../services/topstepx/types';
 import type { AlertRow } from '../types/database';
-import type { BotConfig, ManagedPosition, PositionState, PositionSide, TradeResult } from './types';
+import type { BotConfig, ManagedPosition, PositionState, PositionSide, TradeResult, SfxTpLevels } from './types';
 import { PositionManager } from './position-manager';
 import { TradeExecutor } from './trade-executor';
 import { SupabaseWriteQueue } from './supabase-writer';
-import { AlertListener } from './alert-listener';
+import { AlertListener, type SfxEnrichedAlert } from './alert-listener';
 import { analyzeTrade } from './llm-analyzer';
 
 /** Per-account resources managed by the runner */
 interface AccountResources {
   accountId: number;
-  alertName: string;
+  /** Per-account symbol filter. If set, only alerts for these symbols are routed here. */
+  symbols?: string[];
   positionManager: PositionManager;
   executor: TradeExecutor;
   /** Track pending retry order IDs: symbol -> { steppedOrderId, fallbackOrderId } */
@@ -30,9 +31,8 @@ interface AccountResources {
 /**
  * BotRunner — main orchestrator for the autonomous trading pipeline.
  *
- * Supports two modes:
- * 1. Single-account mode (backward compat): one PositionManager + TradeExecutor
- * 2. Multi-account mode: Map<accountId, AccountResources> with alert name routing
+ * Routes SFX algo alerts to accounts by symbol filter.
+ * Each account has its own PositionManager and TradeExecutor.
  *
  * Lifecycle:
  *   start() -> authenticate -> connect hubs -> subscribe alerts -> run
@@ -48,9 +48,6 @@ export class BotRunner {
 
   /** Multi-account: per-account resources keyed by accountId */
   private accountResources = new Map<number, AccountResources>();
-
-  /** Reverse lookup: alertName -> accountId for routing */
-  private alertNameToAccountId = new Map<string, number>();
 
   /** Whether multi-account mode is active */
   private multiAccountMode: boolean;
@@ -93,14 +90,13 @@ export class BotRunner {
 
         const resources: AccountResources = {
           accountId: acct.accountId,
-          alertName: acct.alertName,
+          symbols: acct.symbols,
           positionManager: pm,
           executor: new TradeExecutor(config.dryRun),
           retryOrders: new Map(),
         };
 
         this.accountResources.set(acct.accountId, resources);
-        this.alertNameToAccountId.set(acct.alertName, acct.accountId);
       }
 
       // Primary PM is the first account's PM (for backward compat getStatus/positions accessor)
@@ -120,7 +116,6 @@ export class BotRunner {
 
       const resources: AccountResources = {
         accountId: config.accountId,
-        alertName: '', // empty = matches all alerts in single-account mode
         positionManager: this.primaryPositionManager,
         executor: new TradeExecutor(config.dryRun),
         retryOrders: new Map(),
@@ -148,6 +143,26 @@ export class BotRunner {
     // Authenticate with TopstepX
     const ok = await authenticate();
     if (!ok) throw new Error('Failed to authenticate with TopstepX');
+
+    // Flatten all accounts: cancel working orders + close open positions
+    // This ensures a clean start with no orphaned positions from previous runs
+    if (!this.config.dryRun) {
+      for (const accountId of accountIds) {
+        try {
+          const result = await flattenAccount(accountId);
+          if (result.ordersCancelled > 0 || result.positionsClosed > 0) {
+            logger.info('Flatten complete', {
+              accountId,
+              ordersCancelled: result.ordersCancelled,
+              positionsClosed: result.positionsClosed,
+            });
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.warn('Flatten failed (non-fatal, continuing)', { accountId, error: msg });
+        }
+      }
+    }
 
     const token = await getToken();
 
@@ -264,8 +279,10 @@ export class BotRunner {
       this.wireAccountEvents(resources);
     }
 
-    // Alert listener -> Route to correct account
-    this.alertListener.on('newAlert', (alert: AlertRow) => {
+    // Alert listener -> Route SFX alert to correct account(s) by symbol filter
+    this.alertListener.on('newAlert', (enriched: SfxEnrichedAlert) => {
+      const { alert, sfxTpLevels } = enriched;
+
       // If symbols list is non-empty, filter to only those symbols
       if (this.config.symbols.length > 0 && !this.config.symbols.includes(alert.symbol)) return;
 
@@ -292,20 +309,18 @@ export class BotRunner {
         }
       }
 
-      // Route alert to correct account(s)
+      // Route alert to account(s) by symbol filter
       const targets = this.resolveAlertTargets(alert);
       if (targets.length === 0) {
-        const alertName = alert.name ?? (alert.raw_payload?.name as string | undefined) ?? null;
         logger.warn('No matching account for alert, skipping', {
           alertId: alert.id,
-          alertName,
           symbol: alert.symbol,
         });
         return;
       }
 
       for (const resources of targets) {
-        this.handleNewAlert(alert, resources).catch((err: unknown) => {
+        this.handleNewAlert(alert, resources, sfxTpLevels).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : 'unknown';
           logger.error('Failed to handle alert', { alertId: alert.id, accountId: resources.accountId, error: msg });
         });
@@ -509,8 +524,7 @@ export class BotRunner {
 
   /**
    * Resolve which account(s) should receive this alert.
-   * In multi-account mode, matches by alert name.
-   * In single-account mode, returns the single account.
+   * Routes by per-account symbol filter. All accounts with matching symbol receive the alert.
    */
   private resolveAlertTargets(alert: AlertRow): AccountResources[] {
     if (!this.multiAccountMode) {
@@ -518,20 +532,20 @@ export class BotRunner {
       return Array.from(this.accountResources.values());
     }
 
-    // Multi-account mode: match by alert name
-    const alertName = alert.name ?? (alert.raw_payload?.name as string | undefined) ?? null;
-    if (!alertName) {
-      logger.warn('Alert has no name field, cannot route in multi-account mode', { alertId: alert.id });
-      return [];
+    // Multi-account mode: route to all accounts whose symbol filter matches
+    const results: AccountResources[] = [];
+    for (const resources of this.accountResources.values()) {
+      // Per-account symbol filter
+      if (resources.symbols && resources.symbols.length > 0) {
+        if (!resources.symbols.includes(alert.symbol.toUpperCase())) {
+          continue;
+        }
+      }
+      // No symbol filter = accept all symbols
+      results.push(resources);
     }
 
-    const accountId = this.alertNameToAccountId.get(alertName);
-    if (accountId === undefined) {
-      return [];
-    }
-
-    const resources = this.accountResources.get(accountId);
-    return resources ? [resources] : [];
+    return results;
   }
 
   /**
@@ -712,7 +726,7 @@ export class BotRunner {
     }
   }
 
-  private async handleNewAlert(alert: AlertRow, resources: AccountResources): Promise<void> {
+  private async handleNewAlert(alert: AlertRow, resources: AccountResources, sfxTpLevels?: SfxTpLevels): Promise<void> {
     const { positionManager, accountId } = resources;
 
     logger.info('Processing alert', {
@@ -720,7 +734,9 @@ export class BotRunner {
       symbol: alert.symbol,
       action: alert.action,
       accountId,
-      alertName: alert.name ?? (alert.raw_payload?.name as string | undefined),
+      sfxTp1: sfxTpLevels?.tp1,
+      sfxTp2: sfxTpLevels?.tp2,
+      sfxTp3: sfxTpLevels?.tp3,
     });
 
     if (alert.action === 'close' || alert.action === 'close_long' || alert.action === 'close_short') {
@@ -742,7 +758,7 @@ export class BotRunner {
       return;
     }
 
-    positionManager.onAlert(alert, vpvr);
+    positionManager.onAlert(alert, vpvr, undefined, sfxTpLevels);
 
     // Fire-and-forget LLM analysis
     const price = alert.price ?? vpvr.poc;

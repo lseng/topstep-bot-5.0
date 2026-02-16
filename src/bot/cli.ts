@@ -32,11 +32,12 @@ async function loadEnv(): Promise<void> {
 
 /**
  * Parse multi-account args from CLI.
- * Supports repeated --account / --alert-name pairs with per-account overrides.
+ * Supports repeated --account flags with per-account overrides.
+ * --alert-name is optional (not needed for SFX mode).
  *
  * Example:
- *   --account 123 --alert-name strategy-A --sl-buffer 8 --max-retries 3
- *   --account 456 --alert-name strategy-B --sl-buffer 4 --max-retries 1
+ *   --account 18206926 --sl-buffer 8 --max-retries 3
+ *   --account 18801458 --symbols MES,MNQ,MYM,MGC,MNG,MBT --sl-buffer 8 --max-retries 1
  *   --max-contracts 30 --dry-run
  */
 function parseMultiAccountArgs(args: string[], globalDefaults: {
@@ -57,10 +58,11 @@ function parseMultiAccountArgs(args: string[], globalDefaults: {
 
       // Start parsing per-account flags
       i += 2;
-      let alertName = '';
+      let alertName: string | undefined;
       let slBufferTicks = globalDefaults.slBufferTicks;
       let maxRetries = globalDefaults.maxRetries;
       let maxContracts = globalDefaults.maxContracts;
+      let symbols: string[] | undefined;
 
       // Consume per-account flags until we hit another --account or end
       while (i < args.length && args[i] !== '--account') {
@@ -76,15 +78,16 @@ function parseMultiAccountArgs(args: string[], globalDefaults: {
         } else if (args[i] === '--max-contracts' && i + 1 < args.length) {
           maxContracts = parseInt(args[i + 1], 10);
           i += 2;
+        } else if (args[i] === '--symbols' && i + 1 < args.length) {
+          symbols = args[i + 1].split(',').map((s) => s.trim().toUpperCase());
+          i += 2;
         } else {
           // Skip unknown flags (they're global)
           i++;
         }
       }
 
-      if (alertName) {
-        accounts.push({ accountId, alertName, slBufferTicks, maxRetries, maxContracts });
-      }
+      accounts.push({ accountId, alertName, slBufferTicks, maxRetries, maxContracts, symbols });
     } else {
       i++;
     }
@@ -118,17 +121,17 @@ async function main(): Promise<void> {
   // Also support single account via --account with --alert-name
   if (multiAccounts.length === 0 && !accountIdStr) {
     console.error('Usage (single account):');
-    console.error('  npm run bot -- --account-id <id> [--alert-name <name>] [--symbols MES,MNQ] [--dry-run]');
+    console.error('  npm run bot -- --account-id <id> [--symbols MES,MNQ] [--dry-run]');
     console.error('');
     console.error('Usage (multi-account):');
     console.error('  npm run bot -- \\');
-    console.error('    --account 123 --alert-name strategy-A --sl-buffer 8 --max-retries 3 \\');
-    console.error('    --account 456 --alert-name strategy-B --sl-buffer 4 --max-retries 1 \\');
+    console.error('    --account 18206926 --sl-buffer 8 --max-retries 3 \\');
+    console.error('    --account 18801458 --symbols MES,MNQ,MYM,MGC,MNG,MBT --sl-buffer 8 \\');
     console.error('    --max-contracts 30 --dry-run');
     console.error('');
     console.error('Global flags: --symbols, --quantity, --max-contracts, --max-retries,');
     console.error('  --sl-buffer, --sync-interval, --dry-run');
-    console.error('Per-account flags (after --account): --alert-name, --sl-buffer, --max-retries, --max-contracts');
+    console.error('Per-account flags (after --account): --alert-name, --sl-buffer, --max-retries, --max-contracts, --symbols');
     process.exit(1);
   }
 
@@ -161,9 +164,11 @@ async function main(): Promise<void> {
       accounts: multiAccounts,
     };
 
-    console.log(`Multi-account mode: ${multiAccounts.length} account-strategy pairs`);
+    console.log(`Multi-account mode: ${multiAccounts.length} accounts`);
     for (const acct of multiAccounts) {
-      console.log(`  Account ${acct.accountId} <- alert "${acct.alertName}" (SL buffer: ${acct.slBufferTicks}, retries: ${acct.maxRetries})`);
+      const symbolsLabel = acct.symbols ? ` [${acct.symbols.join(',')}]` : ' [all symbols]';
+      const alertLabel = acct.alertName ? ` alert="${acct.alertName}"` : '';
+      console.log(`  Account ${acct.accountId}${alertLabel}${symbolsLabel} (SL buffer: ${acct.slBufferTicks}, retries: ${acct.maxRetries})`);
     }
   } else {
     // Single-account mode
@@ -212,9 +217,10 @@ async function main(): Promise<void> {
     // ANSI escape: clear screen and move cursor to top
     process.stdout.write('\x1b[2J\x1b[H');
 
-    console.log('==== TopstepX Bot -- Live Status ====');
+    console.log('==== TopstepX Bot (SFX Algo) -- Live Status ====');
     console.log('');
     console.log(`  Mode:         ${config.dryRun ? 'DRY-RUN' : 'LIVE'}${status.multiAccountMode ? ' (multi-account)' : ''}`);
+    console.log(`  Signal Source: sfx_algo_alerts (Supabase Realtime)`);
     const symbolsLabel = config.symbols.length > 0
       ? `${config.symbols.join(', ')} (${config.symbols.length} symbol${config.symbols.length > 1 ? 's' : ''})`
       : 'Dynamic (all known symbols)';
@@ -268,7 +274,7 @@ async function main(): Promise<void> {
 
   // Start
   const symbolsDisplay = symbols.length > 0 ? symbols.join(', ') : 'all known symbols (dynamic)';
-  console.log(`Starting bot for ${symbolsDisplay} (${dryRun ? 'DRY-RUN' : 'LIVE'})...`);
+  console.log(`Starting SFX bot for ${symbolsDisplay} (${dryRun ? 'DRY-RUN' : 'LIVE'})...`);
   await runner.start();
 
   // Render status every second

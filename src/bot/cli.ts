@@ -5,6 +5,7 @@
 
 import { BotRunner } from './runner';
 import { getCurrentContractId } from '../services/topstepx/client';
+import { enableFileLogging } from '../lib/logger';
 import type { BotConfig, AccountStrategyConfig } from './types';
 
 // --- Helpers ---
@@ -99,6 +100,10 @@ function parseMultiAccountArgs(args: string[], globalDefaults: {
 // --- Main ---
 
 async function main(): Promise<void> {
+  // Enable file logging — creates logs/bot-YYYY-MM-DD_HH-MM-SS.log
+  const logFile = enableFileLogging('logs');
+  console.log(`Logging to: ${logFile}`);
+
   // Parse CLI args
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');

@@ -1,5 +1,7 @@
-// Structured JSON logger for Vercel
+// Structured JSON logger for Vercel + file logging for bot runs
 
+import { appendFileSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
 import type { LogLevel, LogEntry } from '../types';
 
 const LOG_LEVELS: Record<LogLevel, number> = {
@@ -40,11 +42,37 @@ function shouldLog(level: LogLevel): boolean {
   return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
 }
 
+// ─── File logging for bot runs ───────────────────────────────────────────────
+
+let logFilePath: string | null = null;
+
+/** Enable file logging. Creates a timestamped log file in the given directory. */
+export function enableFileLogging(dir = 'logs'): string {
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  logFilePath = join(dir, `bot-${ts}.log`);
+  return logFilePath;
+}
+
+function writeToFile(output: string): void {
+  if (!logFilePath) return;
+  try {
+    appendFileSync(logFilePath, output + '\n');
+  } catch {
+    // Silently ignore file write errors to avoid recursion
+  }
+}
+
 function log(level: LogLevel, message: string, data?: Record<string, unknown>): void {
   if (!shouldLog(level)) return;
 
   const entry = createLogEntry(level, message, data);
   const output = JSON.stringify(entry);
+
+  // Always write to file if enabled
+  writeToFile(output);
 
   switch (level) {
     case 'error':

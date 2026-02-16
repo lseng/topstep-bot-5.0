@@ -74,28 +74,41 @@ export class UserHubConnection {
       logger.info('User Hub reconnected');
     });
 
-    // Register event handlers
+    // Register event handlers (all wrapped in try-catch to prevent process crash)
     this.connection.on('GatewayUserOrder', (data: GatewayOrderEvent) => {
-      logger.debug('GatewayUserOrder event', { orderId: data.orderId, status: data.status });
-      this.onOrderUpdate?.(data);
+      try {
+        logger.debug('GatewayUserOrder event', { orderId: data.orderId, status: data.status });
+        this.onOrderUpdate?.(data);
+      } catch (err) {
+        logger.error('Error in GatewayUserOrder handler', { error: err instanceof Error ? err.message : String(err) });
+      }
     });
 
     this.connection.on('GatewayUserPosition', (data: GatewayPositionEvent) => {
-      logger.debug('GatewayUserPosition event', {
-        contractId: data.contractId,
-        size: data.size,
-      });
-      this.onPositionUpdate?.(data);
+      try {
+        logger.debug('GatewayUserPosition event', { contractId: data.contractId, size: data.size });
+        this.onPositionUpdate?.(data);
+      } catch (err) {
+        logger.error('Error in GatewayUserPosition handler', { error: err instanceof Error ? err.message : String(err) });
+      }
     });
 
     this.connection.on('GatewayUserAccount', (data: GatewayAccountEvent) => {
-      logger.debug('GatewayUserAccount event', { accountId: data.id });
-      this.onAccountUpdate?.(data);
+      try {
+        logger.debug('GatewayUserAccount event', { accountId: data.id });
+        this.onAccountUpdate?.(data);
+      } catch (err) {
+        logger.error('Error in GatewayUserAccount handler', { error: err instanceof Error ? err.message : String(err) });
+      }
     });
 
     this.connection.on('GatewayUserTrade', (data: GatewayTradeEvent) => {
-      logger.debug('GatewayUserTrade event', { orderId: data.orderId, status: data.status });
-      this.onTradeUpdate?.(data);
+      try {
+        logger.debug('GatewayUserTrade event', { orderId: data.orderId, status: data.status });
+        this.onTradeUpdate?.(data);
+      } catch (err) {
+        logger.error('Error in GatewayUserTrade handler', { error: err instanceof Error ? err.message : String(err) });
+      }
     });
 
     await this.connection.start();
@@ -170,17 +183,29 @@ export class MarketHubConnection {
       });
     });
 
-    // Register event handlers
+    // Register event handlers (all wrapped in try-catch to prevent process crash)
     this.connection.on('GatewayQuote', (data: GatewayQuoteEvent) => {
-      this.onQuote?.(data);
+      try {
+        this.onQuote?.(data);
+      } catch (err) {
+        logger.error('Error in GatewayQuote handler', { error: err instanceof Error ? err.message : String(err) });
+      }
     });
 
     this.connection.on('GatewayTrade', (data: GatewayMarketTradeEvent) => {
-      this.onTrade?.(data);
+      try {
+        this.onTrade?.(data);
+      } catch (err) {
+        logger.error('Error in GatewayTrade handler', { error: err instanceof Error ? err.message : String(err) });
+      }
     });
 
     this.connection.on('GatewayDepth', (data: GatewayDepthEvent) => {
-      this.onDepth?.(data);
+      try {
+        this.onDepth?.(data);
+      } catch (err) {
+        logger.error('Error in GatewayDepth handler', { error: err instanceof Error ? err.message : String(err) });
+      }
     });
 
     await this.connection.start();

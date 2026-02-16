@@ -282,6 +282,17 @@ async function main(): Promise<void> {
   renderStatus();
 }
 
+// Prevent unhandled errors from crashing the process
+process.on('unhandledRejection', (reason: unknown) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  console.error(`[unhandledRejection] ${msg}`);
+});
+
+process.on('uncaughtException', (err: Error) => {
+  console.error(`[uncaughtException] ${err.message}`);
+  // Don't exit — keep the bot alive unless it's truly fatal
+});
+
 main().catch((err: unknown) => {
   console.error('Fatal error:', err instanceof Error ? err.message : err);
   process.exit(1);

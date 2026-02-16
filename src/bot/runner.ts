@@ -281,105 +281,122 @@ export class BotRunner {
 
     // Alert listener -> Route SFX alert to correct account(s) by symbol filter
     this.alertListener.on('newAlert', (enriched: SfxEnrichedAlert) => {
-      const { alert, sfxTpLevels } = enriched;
+      try {
+        const { alert, sfxTpLevels } = enriched;
 
-      // If symbols list is non-empty, filter to only those symbols
-      if (this.config.symbols.length > 0 && !this.config.symbols.includes(alert.symbol)) return;
+        // If symbols list is non-empty, filter to only those symbols
+        if (this.config.symbols.length > 0 && !this.config.symbols.includes(alert.symbol)) return;
 
-      // Dynamic symbol resolution
-      if (!this.config.contractIds.has(alert.symbol)) {
-        if (!CONTRACT_SPECS[alert.symbol.toUpperCase()]) {
-          logger.warn('Unknown symbol, skipping alert', { symbol: alert.symbol, alertId: alert.id });
-          return;
-        }
+        // Dynamic symbol resolution
+        if (!this.config.contractIds.has(alert.symbol)) {
+          if (!CONTRACT_SPECS[alert.symbol.toUpperCase()]) {
+            logger.warn('Unknown symbol, skipping alert', { symbol: alert.symbol, alertId: alert.id });
+            return;
+          }
 
-        try {
-          const contractId = getCurrentContractId(alert.symbol);
-          this.config.contractIds.set(alert.symbol, contractId);
-          this.contractToSymbol.set(contractId, alert.symbol);
-          this.marketHub.subscribe(contractId).catch((err: unknown) => {
+          try {
+            const contractId = getCurrentContractId(alert.symbol);
+            this.config.contractIds.set(alert.symbol, contractId);
+            this.contractToSymbol.set(contractId, alert.symbol);
+            this.marketHub.subscribe(contractId).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : 'unknown';
+              logger.error('Failed to subscribe to dynamic symbol', { symbol: alert.symbol, error: msg });
+            });
+            logger.info('Dynamically resolved symbol', { symbol: alert.symbol, contractId });
+          } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'unknown';
-            logger.error('Failed to subscribe to dynamic symbol', { symbol: alert.symbol, error: msg });
+            logger.error('Failed to resolve contract ID for symbol', { symbol: alert.symbol, error: msg });
+            return;
+          }
+        }
+
+        // Route alert to account(s) by symbol filter
+        const targets = this.resolveAlertTargets(alert);
+        if (targets.length === 0) {
+          logger.warn('No matching account for alert, skipping', {
+            alertId: alert.id,
+            symbol: alert.symbol,
           });
-          logger.info('Dynamically resolved symbol', { symbol: alert.symbol, contractId });
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'unknown';
-          logger.error('Failed to resolve contract ID for symbol', { symbol: alert.symbol, error: msg });
           return;
         }
-      }
 
-      // Route alert to account(s) by symbol filter
-      const targets = this.resolveAlertTargets(alert);
-      if (targets.length === 0) {
-        logger.warn('No matching account for alert, skipping', {
-          alertId: alert.id,
-          symbol: alert.symbol,
-        });
-        return;
-      }
-
-      for (const resources of targets) {
-        this.handleNewAlert(alert, resources, sfxTpLevels).catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : 'unknown';
-          logger.error('Failed to handle alert', { alertId: alert.id, accountId: resources.accountId, error: msg });
-        });
+        for (const resources of targets) {
+          this.handleNewAlert(alert, resources, sfxTpLevels).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : 'unknown';
+            logger.error('Failed to handle alert', { alertId: alert.id, accountId: resources.accountId, error: msg });
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error('Error in newAlert handler', { error: msg });
       }
     });
 
     // User Hub -> Route order fills to correct account PM
     this.userHub.onOrderUpdate = (event: GatewayOrderEvent): void => {
-      if (event.status === (OrderStatusNum.FILLED as number) && event.fillPrice != null) {
-        // Find which account's PM has this order
-        for (const resources of this.accountResources.values()) {
-          this.handleRetryFill(event.orderId, resources);
-          resources.positionManager.onOrderFill(event.orderId, event.fillPrice);
+      try {
+        if (event.status === (OrderStatusNum.FILLED as number) && event.fillPrice != null) {
+          for (const resources of this.accountResources.values()) {
+            this.handleRetryFill(event.orderId, resources);
+            resources.positionManager.onOrderFill(event.orderId, event.fillPrice);
+          }
         }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error('Error in onOrderUpdate handler', { error: msg, orderId: event.orderId });
       }
     };
 
     // User Hub -> Route position updates by accountId
     this.userHub.onPositionUpdate = (event: GatewayPositionEvent): void => {
-      const symbol = this.contractToSymbol.get(event.contractId);
-      if (!symbol) return;
+      try {
+        const symbol = this.contractToSymbol.get(event.contractId);
+        if (!symbol) return;
 
-      // Route to correct account by accountId from the event
-      const resources = this.accountResources.get(event.accountId);
-      if (resources) {
-        if (event.size === 0) {
-          const pos = resources.positionManager.positions.get(symbol);
-          if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
-            const exitPrice = event.averagePrice || pos.lastPrice || 0;
-            logger.info('Exchange position closed (detected via UserHub)', {
-              symbol,
-              contractId: event.contractId,
-              accountId: event.accountId,
-              exitPrice,
-            });
-            resources.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
-          }
-        }
-      } else {
-        // If no account match found by event.accountId, fall back to all PMs
-        for (const res of this.accountResources.values()) {
+        const resources = this.accountResources.get(event.accountId);
+        if (resources) {
           if (event.size === 0) {
-            const pos = res.positionManager.positions.get(symbol);
+            const pos = resources.positionManager.positions.get(symbol);
             if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
               const exitPrice = event.averagePrice || pos.lastPrice || 0;
-              res.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+              logger.info('Exchange position closed (detected via UserHub)', {
+                symbol,
+                contractId: event.contractId,
+                accountId: event.accountId,
+                exitPrice,
+              });
+              resources.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+            }
+          }
+        } else {
+          for (const res of this.accountResources.values()) {
+            if (event.size === 0) {
+              const pos = res.positionManager.positions.get(symbol);
+              if (pos && pos.state !== 'closed' && pos.state !== 'cancelled') {
+                const exitPrice = event.averagePrice || pos.lastPrice || 0;
+                res.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
+              }
             }
           }
         }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error('Error in onPositionUpdate handler', { error: msg, contractId: event.contractId });
       }
     };
 
     // Market Hub -> Broadcast quotes to all PMs (market data is shared)
     this.marketHub.onQuote = (event: GatewayQuoteEvent): void => {
-      const symbol = this.contractToSymbol.get(event.contractId);
-      if (symbol) {
-        for (const resources of this.accountResources.values()) {
-          resources.positionManager.onTick(symbol, event.last, new Date(event.timestamp));
+      try {
+        const symbol = this.contractToSymbol.get(event.contractId);
+        if (symbol) {
+          for (const resources of this.accountResources.values()) {
+            resources.positionManager.onTick(symbol, event.last, new Date(event.timestamp));
+          }
         }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error('Error in onQuote handler', { error: msg, contractId: event.contractId });
       }
     };
   }

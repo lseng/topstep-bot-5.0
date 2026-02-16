@@ -38,41 +38,45 @@ export class AlertListener extends EventEmitter {
           table: 'sfx_algo_alerts',
         },
         (payload) => {
-          const sfxAlert = payload.new as SfxAlgoAlertRow;
+          try {
+            const sfxAlert = payload.new as SfxAlgoAlertRow;
 
-          // Only process buy/sell entry alerts (skip TP1/TP2/TP3/sl exits)
-          const alertType = sfxAlert.alert_type?.toLowerCase();
-          if (alertType !== 'buy' && alertType !== 'sell') return;
+            // Only process buy/sell entry alerts (skip TP1/TP2/TP3/sl exits)
+            const alertType = sfxAlert.alert_type?.toLowerCase();
+            if (alertType !== 'buy' && alertType !== 'sell') return;
 
-          // Must have a symbol
-          if (!sfxAlert.symbol) return;
+            // Must have a symbol
+            if (!sfxAlert.symbol) return;
 
-          // Transform SFX alert into AlertRow shape for position manager
-          const alert = transformSfxToAlert(sfxAlert);
+            // Transform SFX alert into AlertRow shape for position manager
+            const alert = transformSfxToAlert(sfxAlert);
 
-          // Extract SFX TP levels and stop loss if present
-          let sfxTpLevels: SfxTpLevels | undefined;
-          if (sfxAlert.tp1 != null && sfxAlert.tp2 != null && sfxAlert.tp3 != null) {
-            sfxTpLevels = {
+            // Extract SFX TP levels and stop loss if present
+            let sfxTpLevels: SfxTpLevels | undefined;
+            if (sfxAlert.tp1 != null && sfxAlert.tp2 != null && sfxAlert.tp3 != null) {
+              sfxTpLevels = {
+                tp1: sfxAlert.tp1,
+                tp2: sfxAlert.tp2,
+                tp3: sfxAlert.tp3,
+                stopLoss: sfxAlert.stop_loss ?? undefined,
+              };
+            }
+
+            logger.info('New SFX alert received', {
+              alertId: sfxAlert.id,
+              symbol: sfxAlert.symbol,
+              action: alertType,
+              direction: sfxAlert.signal_direction,
+              price: sfxAlert.price,
               tp1: sfxAlert.tp1,
               tp2: sfxAlert.tp2,
               tp3: sfxAlert.tp3,
-              stopLoss: sfxAlert.stop_loss ?? undefined,
-            };
+            });
+
+            this.emit('newAlert', { alert, sfxTpLevels } satisfies SfxEnrichedAlert);
+          } catch (err) {
+            logger.error('Error processing SFX alert', { error: err instanceof Error ? err.message : String(err) });
           }
-
-          logger.info('New SFX alert received', {
-            alertId: sfxAlert.id,
-            symbol: sfxAlert.symbol,
-            action: alertType,
-            direction: sfxAlert.signal_direction,
-            price: sfxAlert.price,
-            tp1: sfxAlert.tp1,
-            tp2: sfxAlert.tp2,
-            tp3: sfxAlert.tp3,
-          });
-
-          this.emit('newAlert', { alert, sfxTpLevels } satisfies SfxEnrichedAlert);
         },
       )
       .subscribe((status) => {

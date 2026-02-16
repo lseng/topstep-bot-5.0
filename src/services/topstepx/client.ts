@@ -329,7 +329,7 @@ export async function getOrders(accountId: number, daysBack = 7): Promise<Order[
 
 // ─── Positions ───────────────────────────────────────────────────────────────
 
-export async function getPositions(accountId: number): Promise<Position[]> {
+export async function getPositions(accountId: number): Promise<Position[] | null> {
   // Try Position/list first (newer API)
   try {
     const data = await apiPost<PositionListResponse>('/Position/list', { accountId });
@@ -346,7 +346,8 @@ export async function getPositions(accountId: number): Promise<Position[]> {
     logger.warn('Position/search also failed');
   }
 
-  return [];
+  // Return null to indicate API unavailable (not "no positions")
+  return null;
 }
 
 /**

@@ -15,7 +15,6 @@ import { PositionManager } from './position-manager';
 import { TradeExecutor } from './trade-executor';
 import { SupabaseWriteQueue } from './supabase-writer';
 import { AlertListener, type SfxEnrichedAlert } from './alert-listener';
-import { analyzeTrade } from './llm-analyzer';
 
 /** Per-account resources managed by the runner */
 interface AccountResources {
@@ -690,6 +689,10 @@ export class BotRunner {
       try {
         const exchangePositions = await getPositions(res.accountId);
 
+        // If API is unavailable (returns null), skip reconciliation entirely.
+        // Do NOT treat API failure as "no positions" — that force-closes everything.
+        if (exchangePositions === null) continue;
+
         const exchangeOpen = new Set<string>();
         for (const pos of exchangePositions) {
           if (pos.size !== 0) {
@@ -776,33 +779,6 @@ export class BotRunner {
     }
 
     positionManager.onAlert(alert, vpvr, undefined, sfxTpLevels);
-
-    // Fire-and-forget LLM analysis
-    const price = alert.price ?? vpvr.poc;
-    analyzeTrade({
-      symbol: alert.symbol,
-      action: alert.action,
-      vpvrLevels: {
-        poc: vpvr.poc,
-        vah: vpvr.vah,
-        val: vpvr.val,
-        rangeHigh: vpvr.rangeHigh,
-        rangeLow: vpvr.rangeLow,
-      },
-      confirmationScore: 0,
-      price,
-    }).then((result) => {
-      if (result) {
-        const pos = positionManager.positions.get(alert.symbol);
-        if (pos) {
-          pos.llmReasoning = result.reasoning;
-          pos.llmConfidence = result.confidence;
-          pos.dirty = true;
-        }
-      }
-    }).catch(() => {
-      // LLM is fire-and-forget
-    });
   }
 
   /** Cancel any pending retry orders for a symbol (on opposing signal or close) */

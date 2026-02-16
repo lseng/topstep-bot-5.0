@@ -440,7 +440,7 @@ export class PositionManager extends EventEmitter {
     const now = new Date();
 
     return {
-      id: `pos-${this.positionCounter}`,
+      id: crypto.randomUUID(),
       alertId: alert.id,
       symbol: alert.symbol,
       side,

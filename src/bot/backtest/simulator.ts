@@ -239,6 +239,7 @@ function simulateRetries(
       originalAlertId: alert.id,
       retryEntryLevels: retryLevels,
       strategy: 'vpvr',
+      alertSource: 'backtest',
     };
 
     const tpProgression: string[] = [];
@@ -450,6 +451,7 @@ export function simulateTrade(
     originalAlertId: alert.id,
     retryEntryLevels: [],
     strategy: 'vpvr',
+    alertSource: 'backtest',
   };
 
   const tpProgression: string[] = [];

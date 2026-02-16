@@ -38,7 +38,7 @@ vi.mock('../../src/services/topstepx/client', () => ({
   cancelOrder: vi.fn().mockResolvedValue(true),
   closePosition: vi.fn().mockResolvedValue({ success: true, orderId: 101, errorCode: 0, errorMessage: null }),
   getCurrentContractId: vi.fn().mockReturnValue('CON.F.US.EPH26'),
-  getPositions: vi.fn().mockResolvedValue([]),
+  flattenAccount: vi.fn().mockResolvedValue({ ordersCancelled: 0, positionsClosed: 0 }),
 }));
 
 vi.mock('../../src/services/topstepx/streaming', () => ({
@@ -76,10 +76,6 @@ vi.mock('../../src/services/confirmation/engine', () => ({
   fetchBars: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../../src/bot/llm-analyzer', () => ({
-  analyzeTrade: vi.fn().mockResolvedValue(null),
-}));
-
 import { BotRunner } from '../../src/bot/runner';
 
 const defaultConfig: BotConfig = {
@@ -92,7 +88,6 @@ const defaultConfig: BotConfig = {
   maxContracts: 30,
   maxRetries: 0,
   slBufferTicks: 0,
-  syncIntervalMs: 0,
 };
 
 describe('Bot Lifecycle (e2e)', () => {

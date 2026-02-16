@@ -88,7 +88,6 @@ src/
 │   ├── entry-calculator.ts   # VPVR-based entry price calculation
 │   ├── alert-listener.ts     # Supabase Realtime alert subscription
 │   ├── supabase-writer.ts    # Rate-limited DB write queue
-│   ├── llm-analyzer.ts       # Fire-and-forget LLM trade analysis
 │   └── backtest/             # Backtesting engine
 │       ├── engine.ts         # Alert fetch + simulate + aggregate
 │       ├── simulator.ts      # Pure trade simulation
@@ -159,8 +158,7 @@ initial_sl: DECIMAL(12,4)
 tp1_price, tp2_price, tp3_price: DECIMAL(12,4)
 unrealized_pnl: DECIMAL(12,4) DEFAULT 0
 vpvr_poc, vpvr_vah, vpvr_val: DECIMAL(12,4)
-llm_reasoning: TEXT
-llm_confidence: DECIMAL(5,4)
+alert_source: TEXT
 created_at, updated_at: TIMESTAMPTZ
 ```
 

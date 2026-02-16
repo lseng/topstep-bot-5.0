@@ -3,7 +3,7 @@
 
 import { logger } from '../lib/logger';
 import { getSupabase } from '../lib/supabase';
-import { authenticate, getToken, getCurrentContractId, getPositions, flattenAccount } from '../services/topstepx/client';
+import { authenticate, getToken, getCurrentContractId, flattenAccount } from '../services/topstepx/client';
 import { UserHubConnection, MarketHubConnection } from '../services/topstepx/streaming';
 import { calculateVpvr } from '../services/vpvr/calculator';
 import { fetchBars } from '../services/confirmation/engine';
@@ -56,9 +56,6 @@ export class BotRunner {
 
   /** Reverse lookup: contractId -> symbol for quote routing */
   private contractToSymbol: Map<string, string>;
-
-  /** Position reconciliation timer */
-  private syncInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -182,17 +179,6 @@ export class BotRunner {
     // Start write queue
     this.writeQueue.start();
 
-    // Start position reconciliation polling
-    if (this.config.syncIntervalMs > 0) {
-      this.syncInterval = setInterval(() => {
-        this.reconcileAllPositions().catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : 'unknown';
-          logger.error('Position reconciliation failed', { error: msg });
-        });
-      }, this.config.syncIntervalMs);
-      logger.info('Position sync enabled', { intervalMs: this.config.syncIntervalMs });
-    }
-
     logger.info('Bot running', {
       symbols: this.config.symbols,
       contracts: Array.from(this.config.contractIds.values()),
@@ -206,11 +192,6 @@ export class BotRunner {
     this.running = false;
 
     logger.info('Bot stopping...');
-
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-      this.syncInterval = null;
-    }
 
     await this.alertListener.stop();
     this.writeQueue.stop();
@@ -665,87 +646,6 @@ export class BotRunner {
     }
   }
 
-  /**
-   * Reconcile positions for all accounts.
-   */
-  async reconcileAllPositions(): Promise<void> {
-    for (const resources of this.accountResources.values()) {
-      await this.reconcilePositions(resources);
-    }
-  }
-
-  /**
-   * Reconcile bot position state with actual exchange positions for a specific account.
-   */
-  async reconcilePositions(resources?: AccountResources): Promise<void> {
-    if (!this.running) return;
-
-    // If no resources provided, reconcile for default account (backward compat)
-    const targets = resources
-      ? [resources]
-      : Array.from(this.accountResources.values());
-
-    for (const res of targets) {
-      try {
-        const exchangePositions = await getPositions(res.accountId);
-
-        // If API is unavailable (returns null), skip reconciliation entirely.
-        // Do NOT treat API failure as "no positions" — that force-closes everything.
-        if (exchangePositions === null) continue;
-
-        const exchangeOpen = new Set<string>();
-        for (const pos of exchangePositions) {
-          if (pos.size !== 0) {
-            exchangeOpen.add(pos.contractId);
-          }
-        }
-
-        for (const [symbol, botPos] of res.positionManager.positions.entries()) {
-          if (botPos.state === 'closed' || botPos.state === 'cancelled') continue;
-
-          const contractId = this.config.contractIds.get(symbol);
-          if (!contractId) continue;
-
-          if (!exchangeOpen.has(contractId)) {
-            const exitPrice = botPos.lastPrice ?? botPos.currentSl ?? 0;
-            logger.info('Position reconciliation: exchange position closed', {
-              symbol,
-              contractId,
-              accountId: res.accountId,
-              botState: botPos.state,
-              exitPrice,
-            });
-            res.positionManager.onClose(symbol, exitPrice, 'eod_liquidation');
-          }
-        }
-
-        for (const exPos of exchangePositions) {
-          if (exPos.size === 0) continue;
-          const symbol = this.contractToSymbol.get(exPos.contractId);
-          if (!symbol) {
-            logger.warn('Exchange position for unknown contract', {
-              contractId: exPos.contractId,
-              size: exPos.size,
-            });
-            continue;
-          }
-          const botPos = res.positionManager.positions.get(symbol);
-          if (!botPos || botPos.state === 'closed' || botPos.state === 'cancelled') {
-            logger.warn('Exchange has position bot does not track (manual trade?)', {
-              symbol,
-              contractId: exPos.contractId,
-              size: exPos.size,
-              averagePrice: exPos.averagePrice,
-            });
-          }
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'unknown';
-        logger.error('Position reconciliation error', { error: msg, accountId: res.accountId });
-      }
-    }
-  }
-
   private async handleNewAlert(alert: AlertRow, resources: AccountResources, sfxTpLevels?: SfxTpLevels): Promise<void> {
     const { positionManager, accountId } = resources;
 
@@ -762,9 +662,7 @@ export class BotRunner {
     if (alert.action === 'close' || alert.action === 'close_long' || alert.action === 'close_short') {
       this.cleanupRetryOrders(alert.symbol, resources);
 
-      positionManager.onAlert(alert, {
-        bins: [], poc: 0, vah: 0, val: 0, totalVolume: 0, rangeHigh: 0, rangeLow: 0, barCount: 0,
-      });
+      positionManager.onAlert(alert, null);
       return;
     }
 
@@ -773,8 +671,9 @@ export class BotRunner {
     const bars = await fetchBars(alert.symbol, 5, 60);
     const vpvr = calculateVpvr(bars);
 
-    if (!vpvr) {
-      logger.warn('No VPVR data available, skipping alert', { alertId: alert.id });
+    if (!vpvr && !sfxTpLevels) {
+      // No VPVR data and no SFX TP levels — can't determine entry/exit prices
+      logger.warn('No VPVR data and no SFX TP levels, skipping alert', { alertId: alert.id });
       return;
     }
 

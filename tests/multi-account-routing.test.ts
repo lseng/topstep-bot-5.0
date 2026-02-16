@@ -38,7 +38,7 @@ vi.mock('../src/services/topstepx/client', () => ({
   cancelOrder: vi.fn().mockResolvedValue(true),
   closePosition: vi.fn().mockResolvedValue({ success: true, orderId: 101, errorCode: 0, errorMessage: null }),
   getCurrentContractId: vi.fn().mockReturnValue('CON.F.US.MES.H26'),
-  getPositions: vi.fn().mockResolvedValue([]),
+  flattenAccount: vi.fn().mockResolvedValue({ ordersCancelled: 0, positionsClosed: 0 }),
 }));
 
 vi.mock('../src/services/topstepx/streaming', () => ({
@@ -74,9 +74,6 @@ vi.mock('../src/services/confirmation/engine', () => ({
   fetchBars: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../src/bot/llm-analyzer', () => ({
-  analyzeTrade: vi.fn().mockResolvedValue(null),
-}));
 
 import { BotRunner } from '../src/bot/runner';
 
@@ -115,7 +112,6 @@ const multiAccountConfig: BotConfig = {
   maxContracts: 30,
   maxRetries: 3,
   slBufferTicks: 8,
-  syncIntervalMs: 0,
   accounts: [
     { accountId: 1001, alertName: 'strategy-A', slBufferTicks: 8, maxRetries: 3, maxContracts: 30 },
     { accountId: 2002, alertName: 'strategy-B', slBufferTicks: 4, maxRetries: 1, maxContracts: 30 },
@@ -132,7 +128,6 @@ const singleAccountConfig: BotConfig = {
   maxContracts: 30,
   maxRetries: 3,
   slBufferTicks: 8,
-  syncIntervalMs: 0,
 };
 
 // --- Tests ---

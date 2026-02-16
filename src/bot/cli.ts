@@ -115,7 +115,6 @@ async function main(): Promise<void> {
   const maxContracts = parseInt(getArg(args, '--max-contracts') ?? '30', 10);
   const maxRetries = parseInt(getArg(args, '--max-retries') ?? '3', 10);
   const slBufferTicks = parseInt(getArg(args, '--sl-buffer') ?? '8', 10);
-  const syncIntervalMs = parseInt(getArg(args, '--sync-interval') ?? '60000', 10);
 
   // Check for multi-account mode: repeated --account flags
   const multiAccounts = parseMultiAccountArgs(args, { maxContracts, maxRetries, slBufferTicks });
@@ -135,7 +134,7 @@ async function main(): Promise<void> {
     console.error('    --max-contracts 30 --dry-run');
     console.error('');
     console.error('Global flags: --symbols, --quantity, --max-contracts, --max-retries,');
-    console.error('  --sl-buffer, --sync-interval, --dry-run');
+    console.error('  --sl-buffer, --dry-run');
     console.error('Per-account flags (after --account): --alert-name, --sl-buffer, --max-retries, --max-contracts, --symbols');
     process.exit(1);
   }
@@ -165,7 +164,6 @@ async function main(): Promise<void> {
       maxContracts,
       maxRetries,
       slBufferTicks,
-      syncIntervalMs,
       accounts: multiAccounts,
     };
 
@@ -196,7 +194,6 @@ async function main(): Promise<void> {
       maxContracts,
       maxRetries,
       slBufferTicks,
-      syncIntervalMs,
     };
 
     // If alert-name is specified in single-account mode, use multi-account routing

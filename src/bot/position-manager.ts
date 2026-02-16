@@ -104,7 +104,7 @@ export class PositionManager extends EventEmitter {
    * Handle a new alert. Creates a pending_entry or cancels/closes existing positions.
    * When sfxTpLevels are provided, they override VPVR-calculated TP levels.
    */
-  onAlert(alert: AlertRow, vpvr: VpvrResult, confirmationScore?: number, sfxTpLevels?: SfxTpLevels): void {
+  onAlert(alert: AlertRow, vpvr: VpvrResult | null, confirmationScore?: number, sfxTpLevels?: SfxTpLevels): void {
     const { symbol, action } = alert;
 
     // Close actions → close existing position (cancels any pending retry)
@@ -153,16 +153,40 @@ export class PositionManager extends EventEmitter {
       return;
     }
 
-    // Calculate entry from VPVR (with slBufferTicks if configured)
-    const entry = calculateEntryPrice(action, vpvr, {
-      symbol: alert.symbol,
-      slBufferTicks: this.config.slBufferTicks,
-    });
+    let entry: EntryCalculation | null;
+    let retryLevels: number[];
+
+    if (vpvr) {
+      // Calculate entry from VPVR (with slBufferTicks if configured)
+      entry = calculateEntryPrice(action, vpvr, {
+        symbol: alert.symbol,
+        slBufferTicks: this.config.slBufferTicks,
+      });
+      retryLevels = calculateRetryEntryLevels(newSide, vpvr, this.config.maxRetries);
+    } else if (sfxTpLevels) {
+      // No VPVR available — use SFX signal price as entry, SFX SL as initial SL
+      const entryPrice = alert.price ?? sfxTpLevels.tp1;
+      const initialSl = sfxTpLevels.stopLoss ?? (newSide === 'long' ? entryPrice - 10 : entryPrice + 10);
+      entry = {
+        entryPrice,
+        initialSl,
+        tp1: sfxTpLevels.tp1,
+        tp2: sfxTpLevels.tp2,
+        tp3: sfxTpLevels.tp3,
+      };
+      // No VPVR for retry levels — use flat ladder around entry price
+      const tickSize = CONTRACT_SPECS[symbol]?.tickSize ?? 0.25;
+      retryLevels = [entryPrice];
+      for (let i = 1; i <= this.config.maxRetries; i++) {
+        const offset = i * 4 * tickSize;
+        retryLevels.push(newSide === 'long' ? entryPrice - offset : entryPrice + offset);
+      }
+    } else {
+      // No VPVR and no SFX TP levels — cannot determine entry
+      return;
+    }
 
     if (!entry) return;
-
-    // Calculate retry entry levels for the full ladder
-    const retryLevels = calculateRetryEntryLevels(newSide, vpvr, this.config.maxRetries);
 
     // Override VPVR TPs and SL with SFX levels when available
     if (sfxTpLevels) {
@@ -430,7 +454,7 @@ export class PositionManager extends EventEmitter {
 
   private createPosition(
     alert: AlertRow,
-    vpvr: VpvrResult,
+    vpvr: VpvrResult | null,
     entry: EntryCalculation,
     side: PositionSide,
     retryLevels: number[],
@@ -465,6 +489,7 @@ export class PositionManager extends EventEmitter {
       originalAlertId: alert.id,
       retryEntryLevels: retryLevels,
       strategy: (alert.strategy ?? (alert.raw_payload?.strategy as string | undefined)) || 'vpvr',
+      alertSource: alert.strategy === 'sfx-algo' || alert.raw_payload?.source === 'sfx-algo' ? 'sfx_algo_alerts' : 'alerts',
     };
   }
 
@@ -554,14 +579,14 @@ export class PositionManager extends EventEmitter {
       grossPnl,
       fees: 0,
       netPnl: grossPnl,
-      vpvrPoc: position.vpvrData.poc,
-      vpvrVah: position.vpvrData.vah,
-      vpvrVal: position.vpvrData.val,
+      vpvrPoc: position.vpvrData?.poc ?? 0,
+      vpvrVah: position.vpvrData?.vah ?? 0,
+      vpvrVal: position.vpvrData?.val ?? 0,
       highestTpHit,
       confirmationScore: position.confirmationScore,
-      llmReasoning: position.llmReasoning,
       retryCount: position.retryCount,
       originalAlertId: position.originalAlertId,
+      alertSource: position.alertSource,
     };
   }
 }

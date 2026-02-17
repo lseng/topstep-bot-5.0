@@ -221,10 +221,10 @@ describe('getCurrentContractId', () => {
   describe('monthly symbols', () => {
     // Monthly contracts use delivery-month naming: the contract actively
     // trading in month N is named for month N+1 delivery.
-    it('MGC uses monthly expiry - delivery month is current+1 before rollover', () => {
-      mockDate(2026, 2, 10); // Feb 10 → trading Feb contract → delivery = Mar
+    it('MGC bimonthly delivery skips March → April', () => {
+      mockDate(2026, 2, 10); // Feb 10 → trading Feb, next delivery = Apr
       const id = getCurrentContractId('MGC');
-      expect(id).toBe('CON.F.US.MGC.H26'); // H = Mar (delivery month)
+      expect(id).toBe('CON.F.US.MGC.J26'); // J = Apr (Gold has no March delivery)
     });
 
     it('MCL rolls to next month after day 19 (with delivery offset)', () => {
@@ -233,22 +233,46 @@ describe('getCurrentContractId', () => {
       expect(id).toBe('CON.F.US.MCLE.J26'); // J = Apr (delivery month)
     });
 
-    it('MBT uses correct prefix (CME)', () => {
-      mockDate(2026, 5, 10); // May 10 → trading May contract → delivery = Jun
+    it('GC bimonthly delivery matches MGC', () => {
+      mockDate(2026, 2, 10); // Feb 10 → next delivery = Apr
+      const id = getCurrentContractId('GC');
+      expect(id).toBe('CON.F.US.GCE.J26'); // J = Apr
+    });
+
+    it('HE uses custom delivery months (skips Mar)', () => {
+      mockDate(2026, 2, 10); // Feb 10 → next delivery in [2,4,5,6,7,8,10,12] > 2 = Apr
+      const id = getCurrentContractId('HE');
+      expect(id).toBe('CON.F.US.HE.J26'); // J = Apr
+    });
+
+    it('LE bimonthly delivery skips odd months', () => {
+      mockDate(2026, 2, 10); // Feb 10 → next even delivery > 2 = Apr
+      const id = getCurrentContractId('LE');
+      expect(id).toBe('CON.F.US.GLE.J26'); // J = Apr
+    });
+
+    it('MBT crypto skips delivery-month offset', () => {
+      mockDate(2026, 5, 10); // May 10 → trading May contract (crypto settles same month)
       const id = getCurrentContractId('MBT');
-      expect(id).toBe('CON.F.US.MBT.M26'); // M = Jun (delivery month)
+      expect(id).toBe('CON.F.US.MBT.K26'); // K = May (no delivery offset)
     });
 
-    it('monthly rolls to Feb of next year from Dec after rollover', () => {
-      mockDate(2026, 12, 20); // Dec 20 → rolled to Jan 2027 → delivery = Feb 2027
-      const id = getCurrentContractId('MGC');
-      expect(id).toBe('CON.F.US.MGC.G27'); // G = Feb (delivery month)
+    it('MET crypto skips delivery-month offset', () => {
+      mockDate(2026, 2, 10); // Feb 10 → trading Feb contract
+      const id = getCurrentContractId('MET');
+      expect(id).toBe('CON.F.US.GMET.G26'); // G = Feb (no delivery offset)
     });
 
-    it('monthly stays in Jan delivery before rollover in Dec', () => {
-      mockDate(2026, 12, 15); // Dec 15 → trading Dec contract → delivery = Jan 2027
+    it('MGC bimonthly wraps to Feb of next year from Dec after rollover', () => {
+      mockDate(2026, 12, 20); // Dec 20 → rolled to Jan 2027 → next delivery = Feb 2027
       const id = getCurrentContractId('MGC');
-      expect(id).toBe('CON.F.US.MGC.F27'); // F = Jan (delivery month)
+      expect(id).toBe('CON.F.US.MGC.G27'); // G = Feb (next even delivery month)
+    });
+
+    it('MGC bimonthly wraps to Feb in Dec before rollover', () => {
+      mockDate(2026, 12, 15); // Dec 15 → trading Dec → next delivery > 12 wraps to Feb 2027
+      const id = getCurrentContractId('MGC');
+      expect(id).toBe('CON.F.US.MGC.G27'); // G = Feb (no Jan delivery for Gold)
     });
   });
 

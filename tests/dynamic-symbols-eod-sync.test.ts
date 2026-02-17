@@ -30,6 +30,7 @@ vi.mock('../src/lib/supabase', () => ({
 }));
 
 const mockGetCurrentContractId = vi.fn().mockReturnValue('CON.F.US.MES.H26');
+const mockResolveContractId = vi.fn().mockResolvedValue('CON.F.US.MES.H26');
 
 vi.mock('../src/services/topstepx/client', () => ({
   authenticate: vi.fn().mockResolvedValue(true),
@@ -38,6 +39,7 @@ vi.mock('../src/services/topstepx/client', () => ({
   cancelOrder: vi.fn().mockResolvedValue(true),
   closePosition: vi.fn().mockResolvedValue({ success: true, orderId: 101, errorCode: 0, errorMessage: null }),
   getCurrentContractId: (...args: unknown[]) => mockGetCurrentContractId(...args),
+  resolveContractId: (...args: unknown[]) => mockResolveContractId(...args),
   flattenAccount: vi.fn().mockResolvedValue({ ordersCancelled: 0, positionsClosed: 0 }),
 }));
 
@@ -179,8 +181,8 @@ describe('Dynamic Symbol Handling', () => {
       // Wait for async processing
       await new Promise((r) => setTimeout(r, 50));
 
-      // The runner should have called getCurrentContractId for MES
-      expect(mockGetCurrentContractId).toHaveBeenCalledWith('MES');
+      // The runner should have called resolveContractId for MES
+      expect(mockResolveContractId).toHaveBeenCalledWith('MES');
 
       await runner.stop();
     });

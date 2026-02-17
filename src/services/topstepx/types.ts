@@ -265,6 +265,10 @@ export interface ContractSpec {
   marginDay: number;
   marginOvernight: number;
   expiryCycle: 'quarterly' | 'monthly' | 'quarterly_fjnv';
+  /** If false, skip delivery-month +1 offset (crypto futures settle same month). Default true. */
+  deliveryMonthOffset?: boolean;
+  /** Delivery months for non-standard monthly contracts (e.g. Gold = even months only). */
+  deliveryMonths?: number[];
 }
 
 export const CONTRACT_SPECS: Record<string, ContractSpec> = {
@@ -370,6 +374,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginDay: 50,
     marginOvernight: 1600,
     expiryCycle: 'monthly',
+    deliveryMonthOffset: false,
   },
   MET: {
     name: 'Micro Ether',
@@ -380,6 +385,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginDay: 50,
     marginOvernight: 500,
     expiryCycle: 'monthly',
+    deliveryMonthOffset: false,
   },
 
   // ─── CME FX Futures ───────────────────────────────────────────────────────
@@ -574,6 +580,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginDay: 500,
     marginOvernight: 6500,
     expiryCycle: 'monthly',
+    deliveryMonths: [2, 4, 6, 8, 10, 12],
   },
   HO: {
     name: 'Heating Oil',
@@ -596,6 +603,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginDay: 500,
     marginOvernight: 11000,
     expiryCycle: 'monthly',
+    deliveryMonths: [2, 4, 6, 8, 10, 12],
   },
   MGC: {
     name: 'Micro Gold',
@@ -606,6 +614,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginDay: 50,
     marginOvernight: 1200,
     expiryCycle: 'monthly',
+    deliveryMonths: [2, 4, 6, 8, 10, 12],
   },
   SI: {
     name: 'Silver',
@@ -718,6 +727,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginDay: 500,
     marginOvernight: 1200,
     expiryCycle: 'monthly',
+    deliveryMonths: [2, 4, 5, 6, 7, 8, 10, 12],
   },
   LE: {
     name: 'Live Cattle',
@@ -728,6 +738,7 @@ export const CONTRACT_SPECS: Record<string, ContractSpec> = {
     marginDay: 500,
     marginOvernight: 1800,
     expiryCycle: 'monthly',
+    deliveryMonths: [2, 4, 6, 8, 10, 12],
   },
 
   // ─── CBOT Interest Rate Futures ───────────────────────────────────────────

@@ -234,12 +234,25 @@ export function getCurrentContractId(symbol = 'ES'): string {
   }
 
   // Monthly contracts use delivery-month naming: the contract actively trading
-  // in month N is named for month N+1 (e.g., CL March "H" trades in February)
-  if (spec.expiryCycle === 'monthly') {
-    expiryMonth += 1;
-    if (expiryMonth > 12) {
-      expiryMonth = 1;
-      year += 1;
+  // in month N is named for the next delivery month (e.g., CL March "H" trades in February).
+  // Crypto futures (MBT, MET) settle same month — skip offset.
+  if (spec.expiryCycle === 'monthly' && spec.deliveryMonthOffset !== false) {
+    if (spec.deliveryMonths) {
+      // Find the next delivery month after the current trading month
+      const next = spec.deliveryMonths.find((m) => m > expiryMonth);
+      if (next) {
+        expiryMonth = next;
+      } else {
+        expiryMonth = spec.deliveryMonths[0];
+        year += 1;
+      }
+    } else {
+      // Standard monthly: every month has delivery, so +1
+      expiryMonth += 1;
+      if (expiryMonth > 12) {
+        expiryMonth = 1;
+        year += 1;
+      }
     }
   }
 
@@ -247,6 +260,41 @@ export function getCurrentContractId(symbol = 'ES'): string {
   const yearCode = String(year).slice(-2);
 
   return `${spec.contractIdPrefix}.${expiryCode}${yearCode}`;
+}
+
+/**
+ * Resolve the active contract ID for a symbol, validating against the API.
+ * Falls back to getCurrentContractId() if the API search doesn't match.
+ */
+export async function resolveContractId(
+  symbol: string,
+  accountId?: number
+): Promise<string> {
+  const calculated = getCurrentContractId(symbol);
+  try {
+    const contracts = await searchContracts(symbol, accountId);
+    const match = contracts.find((c) => c.id === calculated);
+    if (match) return calculated;
+
+    // Calculated ID not found — use the first search result with a matching prefix
+    const spec = CONTRACT_SPECS[symbol.toUpperCase()] ?? CONTRACT_SPECS['ES'];
+    const prefixMatch = contracts.find((c) => c.id?.startsWith(spec.contractIdPrefix));
+    if (prefixMatch?.id) {
+      logger.warn('Contract ID mismatch, using API result', {
+        symbol,
+        calculated,
+        actual: prefixMatch.id,
+      });
+      return prefixMatch.id;
+    }
+  } catch (error) {
+    logger.warn('Contract search failed, using calculated ID', {
+      symbol,
+      calculated,
+      error: error instanceof Error ? error.message : 'Unknown',
+    });
+  }
+  return calculated;
 }
 
 // ─── Orders ──────────────────────────────────────────────────────────────────

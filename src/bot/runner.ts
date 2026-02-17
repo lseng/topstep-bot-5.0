@@ -3,7 +3,7 @@
 
 import { logger } from '../lib/logger';
 import { getSupabase } from '../lib/supabase';
-import { authenticate, getToken, getCurrentContractId, flattenAccount } from '../services/topstepx/client';
+import { authenticate, getToken, resolveContractId, flattenAccount } from '../services/topstepx/client';
 import { UserHubConnection, MarketHubConnection } from '../services/topstepx/streaming';
 import { calculateVpvr } from '../services/vpvr/calculator';
 import { fetchBars } from '../services/confirmation/engine';
@@ -261,55 +261,7 @@ export class BotRunner {
 
     // Alert listener -> Route SFX alert to correct account(s) by symbol filter
     this.alertListener.on('newAlert', (enriched: SfxEnrichedAlert) => {
-      try {
-        const { alert, sfxTpLevels } = enriched;
-
-        // If symbols list is non-empty, filter to only those symbols
-        if (this.config.symbols.length > 0 && !this.config.symbols.includes(alert.symbol)) return;
-
-        // Dynamic symbol resolution
-        if (!this.config.contractIds.has(alert.symbol)) {
-          if (!CONTRACT_SPECS[alert.symbol.toUpperCase()]) {
-            logger.warn('Unknown symbol, skipping alert', { symbol: alert.symbol, alertId: alert.id });
-            return;
-          }
-
-          try {
-            const contractId = getCurrentContractId(alert.symbol);
-            this.config.contractIds.set(alert.symbol, contractId);
-            this.contractToSymbol.set(contractId, alert.symbol);
-            this.marketHub.subscribe(contractId).catch((err: unknown) => {
-              const msg = err instanceof Error ? err.message : 'unknown';
-              logger.error('Failed to subscribe to dynamic symbol', { symbol: alert.symbol, error: msg });
-            });
-            logger.info('Dynamically resolved symbol', { symbol: alert.symbol, contractId });
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'unknown';
-            logger.error('Failed to resolve contract ID for symbol', { symbol: alert.symbol, error: msg });
-            return;
-          }
-        }
-
-        // Route alert to account(s) by symbol filter
-        const targets = this.resolveAlertTargets(alert);
-        if (targets.length === 0) {
-          logger.warn('No matching account for alert, skipping', {
-            alertId: alert.id,
-            symbol: alert.symbol,
-          });
-          return;
-        }
-
-        for (const resources of targets) {
-          this.handleNewAlert(alert, resources, sfxTpLevels).catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : 'unknown';
-            logger.error('Failed to handle alert', { alertId: alert.id, accountId: resources.accountId, error: msg });
-          });
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.error('Error in newAlert handler', { error: msg });
-      }
+      void this.handleSfxAlert(enriched);
     });
 
     // User Hub -> Route order fills to correct account PM
@@ -517,6 +469,58 @@ export class BotRunner {
         logger.error('Failed to write trade log', { error: msg, accountId });
       });
     });
+  }
+
+  private async handleSfxAlert(enriched: SfxEnrichedAlert): Promise<void> {
+    try {
+      const { alert, sfxTpLevels } = enriched;
+
+      // If symbols list is non-empty, filter to only those symbols
+      if (this.config.symbols.length > 0 && !this.config.symbols.includes(alert.symbol)) return;
+
+      // Dynamic symbol resolution with API validation
+      if (!this.config.contractIds.has(alert.symbol)) {
+        if (!CONTRACT_SPECS[alert.symbol.toUpperCase()]) {
+          logger.warn('Unknown symbol, skipping alert', { symbol: alert.symbol, alertId: alert.id });
+          return;
+        }
+
+        try {
+          const contractId = await resolveContractId(alert.symbol);
+          this.config.contractIds.set(alert.symbol, contractId);
+          this.contractToSymbol.set(contractId, alert.symbol);
+          this.marketHub.subscribe(contractId).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : 'unknown';
+            logger.error('Failed to subscribe to dynamic symbol', { symbol: alert.symbol, error: msg });
+          });
+          logger.info('Dynamically resolved symbol', { symbol: alert.symbol, contractId });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Failed to resolve contract ID for symbol', { symbol: alert.symbol, error: msg });
+          return;
+        }
+      }
+
+      // Route alert to account(s) by symbol filter
+      const targets = this.resolveAlertTargets(alert);
+      if (targets.length === 0) {
+        logger.warn('No matching account for alert, skipping', {
+          alertId: alert.id,
+          symbol: alert.symbol,
+        });
+        return;
+      }
+
+      for (const resources of targets) {
+        this.handleNewAlert(alert, resources, sfxTpLevels).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'unknown';
+          logger.error('Failed to handle alert', { alertId: alert.id, accountId: resources.accountId, error: msg });
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('Error in newAlert handler', { error: msg });
+    }
   }
 
   /**

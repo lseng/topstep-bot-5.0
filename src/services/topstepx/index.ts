@@ -7,6 +7,7 @@ export {
   getAccountSummary,
   searchContracts,
   getCurrentContractId,
+  resolveContractId,
   placeOrder,
   cancelOrder,
   getOrders,

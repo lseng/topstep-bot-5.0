@@ -10,7 +10,6 @@ export {
   placeOrder,
   cancelOrder,
   getOrders,
-  getPositions,
   closePosition,
   getTrades,
   getHistoricalBars,

@@ -67,9 +67,8 @@ export class SupabaseWriteQueue {
         exit_price: pos.exitPrice ?? null,
         exit_reason: pos.exitReason ?? null,
         closed_at: pos.closedAt?.toISOString() ?? null,
-        llm_reasoning: pos.llmReasoning ?? null,
-        llm_confidence: pos.llmConfidence ?? null,
         confirmation_score: pos.confirmationScore ?? null,
+        alert_source: pos.alertSource,
       };
 
       const { error } = await supabase
@@ -117,7 +116,7 @@ export class SupabaseWriteQueue {
       vpvr_val: trade.vpvrVal,
       highest_tp_hit: trade.highestTpHit,
       confirmation_score: trade.confirmationScore ?? null,
-      llm_reasoning: trade.llmReasoning ?? null,
+      alert_source: trade.alertSource,
     };
 
     const { error } = await supabase.from('trades_log').insert(insert as never);
@@ -150,6 +149,7 @@ export class SupabaseWriteQueue {
       tp3_price: position.tp3Price,
       vpvr_data: position.vpvrData as unknown as Record<string, unknown>,
       confirmation_score: position.confirmationScore ?? null,
+      alert_source: position.alertSource,
     } as never);
 
     if (error) {

@@ -98,8 +98,7 @@ export interface Database {
           exit_price: number | null;
           exit_reason: string | null;
           closed_at: string | null;
-          llm_reasoning: string | null;
-          llm_confidence: number | null;
+          alert_source: string | null;
         };
         Insert: {
           id?: string;
@@ -127,8 +126,7 @@ export interface Database {
           exit_price?: number | null;
           exit_reason?: string | null;
           closed_at?: string | null;
-          llm_reasoning?: string | null;
-          llm_confidence?: number | null;
+          alert_source?: string | null;
         };
         Update: {
           id?: string;
@@ -156,8 +154,7 @@ export interface Database {
           exit_price?: number | null;
           exit_reason?: string | null;
           closed_at?: string | null;
-          llm_reasoning?: string | null;
-          llm_confidence?: number | null;
+          alert_source?: string | null;
         };
       };
       bars_1m: {
@@ -283,7 +280,7 @@ export interface Database {
           vpvr_val: number | null;
           highest_tp_hit: string | null;
           confirmation_score: number | null;
-          llm_reasoning: string | null;
+          alert_source: string | null;
           metadata: Record<string, unknown> | null;
         };
         Insert: {
@@ -308,7 +305,7 @@ export interface Database {
           vpvr_val?: number | null;
           highest_tp_hit?: string | null;
           confirmation_score?: number | null;
-          llm_reasoning?: string | null;
+          alert_source?: string | null;
           metadata?: Record<string, unknown> | null;
         };
         Update: {
@@ -333,7 +330,7 @@ export interface Database {
           vpvr_val?: number | null;
           highest_tp_hit?: string | null;
           confirmation_score?: number | null;
-          llm_reasoning?: string | null;
+          alert_source?: string | null;
           metadata?: Record<string, unknown> | null;
         };
       };

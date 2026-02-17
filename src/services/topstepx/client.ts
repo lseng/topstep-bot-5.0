@@ -19,8 +19,6 @@ import {
   type CancelOrderParams,
   type Order,
   type OrderSearchResponse,
-  type Position,
-  type PositionListResponse,
   type Trade,
   type TradeSearchResponse,
   type RetrieveBarsParams,
@@ -328,27 +326,6 @@ export async function getOrders(accountId: number, daysBack = 7): Promise<Order[
 }
 
 // ─── Positions ───────────────────────────────────────────────────────────────
-
-export async function getPositions(accountId: number): Promise<Position[] | null> {
-  // Try Position/list first (newer API)
-  try {
-    const data = await apiPost<PositionListResponse>('/Position/list', { accountId });
-    if (data.success) return data.positions ?? [];
-  } catch {
-    logger.warn('Position/list failed, trying Position/search');
-  }
-
-  // Fallback to Position/search
-  try {
-    const data = await apiPost<PositionListResponse>('/Position/search', { accountId });
-    if (data.success) return data.positions ?? [];
-  } catch {
-    logger.warn('Position/search also failed');
-  }
-
-  // Return null to indicate API unavailable (not "no positions")
-  return null;
-}
 
 /**
  * Close an open position by placing an opposite market order.

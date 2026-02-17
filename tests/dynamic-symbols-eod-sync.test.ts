@@ -30,7 +30,6 @@ vi.mock('../src/lib/supabase', () => ({
 }));
 
 const mockGetCurrentContractId = vi.fn().mockReturnValue('CON.F.US.MES.H26');
-const mockGetPositions = vi.fn().mockResolvedValue([]);
 
 vi.mock('../src/services/topstepx/client', () => ({
   authenticate: vi.fn().mockResolvedValue(true),
@@ -39,7 +38,7 @@ vi.mock('../src/services/topstepx/client', () => ({
   cancelOrder: vi.fn().mockResolvedValue(true),
   closePosition: vi.fn().mockResolvedValue({ success: true, orderId: 101, errorCode: 0, errorMessage: null }),
   getCurrentContractId: (...args: unknown[]) => mockGetCurrentContractId(...args),
-  getPositions: (...args: unknown[]) => mockGetPositions(...args),
+  flattenAccount: vi.fn().mockResolvedValue({ ordersCancelled: 0, positionsClosed: 0 }),
 }));
 
 const mockSubscribe = vi.fn().mockResolvedValue(undefined);
@@ -75,10 +74,6 @@ vi.mock('../src/services/vpvr/calculator', () => ({
 
 vi.mock('../src/services/confirmation/engine', () => ({
   fetchBars: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../src/bot/llm-analyzer', () => ({
-  analyzeTrade: vi.fn().mockResolvedValue(null),
 }));
 
 import { BotRunner } from '../src/bot/runner';
@@ -155,7 +150,6 @@ describe('Dynamic Symbol Handling', () => {
       maxContracts: 30,
       maxRetries: 0,
       slBufferTicks: 0,
-      syncIntervalMs: 0,
     };
 
     beforeEach(() => {
@@ -328,183 +322,65 @@ describe('Strategy Field', () => {
   });
 });
 
-// ─── EOD Position Sync ───────────────────────────────────────────────────────
+// ─── EOD Liquidation State Transition ────────────────────────────────────────
 
-describe('EOD Position Sync', () => {
-  describe('reconcilePositions detects exchange-closed positions', () => {
-    let runner: BotRunner;
-
-    const config: BotConfig = {
+describe('eod_liquidation state transition', () => {
+  it('position can be closed with eod_liquidation reason', () => {
+    const pm = new PositionManager({
       accountId: 1001,
       contractIds: new Map([['MES', 'CON.F.US.MES.H26']]),
-      dryRun: true,
-      writeIntervalMs: 5000,
       symbols: ['MES'],
       quantity: 1,
       maxContracts: 30,
       maxRetries: 0,
       slBufferTicks: 0,
-      syncIntervalMs: 0, // Disabled for manual triggering in tests
-    };
-
-    beforeEach(() => {
-      vi.clearAllMocks();
-      mockGetCurrentContractId.mockReturnValue('CON.F.US.MES.H26');
-      runner = new BotRunner(config);
     });
 
-    it('closes bot position when exchange has no position (eod_liquidation)', async () => {
-      await runner.start();
-
-      // Simulate an active position in the bot
-      const alert = makeAlert({ symbol: 'MES', action: 'buy' });
-      runner.positions.onAlert(alert, {
-        bins: [], poc: 5050, vah: 5080, val: 5020,
-        totalVolume: 100000, rangeHigh: 5100, rangeLow: 5000, barCount: 60,
-      });
-      const pos = runner.positions.positions.get('MES')!;
-      pos.entryOrderId = 100;
-      runner.positions.onOrderFill(100, 5020);
-      expect(pos.state).toBe('active');
-
-      // Exchange reports no positions (EOD liquidation happened)
-      mockGetPositions.mockResolvedValueOnce([]);
-
-      await runner.reconcilePositions();
-
-      // Bot should have closed the position with eod_liquidation reason
-      const updatedPos = runner.positions.positions.get('MES')!;
-      expect(updatedPos.state).toBe('closed');
-      expect(updatedPos.exitReason).toBe('eod_liquidation');
-
-      await runner.stop();
+    const alert = makeAlert({ symbol: 'MES', action: 'buy' });
+    pm.onAlert(alert, {
+      bins: [], poc: 5050, vah: 5080, val: 5020,
+      totalVolume: 100000, rangeHigh: 5100, rangeLow: 5000, barCount: 60,
     });
 
-    it('does nothing when exchange positions match bot state', async () => {
-      await runner.start();
+    const pos = pm.positions.get('MES')!;
+    pos.entryOrderId = 100;
+    pm.onOrderFill(100, 5020);
+    expect(pos.state).toBe('active');
 
-      // Simulate an active position in the bot
-      const alert = makeAlert({ symbol: 'MES', action: 'buy' });
-      runner.positions.onAlert(alert, {
-        bins: [], poc: 5050, vah: 5080, val: 5020,
-        totalVolume: 100000, rangeHigh: 5100, rangeLow: 5000, barCount: 60,
-      });
-      const pos = runner.positions.positions.get('MES')!;
-      pos.entryOrderId = 100;
-      runner.positions.onOrderFill(100, 5020);
-      expect(pos.state).toBe('active');
+    const closedHandler = vi.fn();
+    pm.on('positionClosed', closedHandler);
 
-      // Exchange reports matching position
-      mockGetPositions.mockResolvedValueOnce([{
-        accountId: 1001,
-        contractId: 'CON.F.US.MES.H26',
-        size: 1,
-        averagePrice: 5020,
-        unrealizedPnl: 0,
-        realizedPnl: 0,
-      }]);
+    pm.onClose('MES', 5030, 'eod_liquidation');
 
-      await runner.reconcilePositions();
-
-      // Bot position should still be active
-      const updatedPos = runner.positions.positions.get('MES')!;
-      expect(updatedPos.state).toBe('active');
-
-      await runner.stop();
-    });
-
-    it('does not close already-closed positions', async () => {
-      await runner.start();
-
-      // Simulate a closed position
-      const alert = makeAlert({ symbol: 'MES', action: 'buy' });
-      runner.positions.onAlert(alert, {
-        bins: [], poc: 5050, vah: 5080, val: 5020,
-        totalVolume: 100000, rangeHigh: 5100, rangeLow: 5000, barCount: 60,
-      });
-      const pos = runner.positions.positions.get('MES')!;
-      pos.state = 'closed';
-
-      mockGetPositions.mockResolvedValueOnce([]);
-
-      await runner.reconcilePositions();
-
-      // Should still be closed (not double-closed)
-      expect(pos.state).toBe('closed');
-
-      await runner.stop();
-    });
-
-    it('handles API errors gracefully', async () => {
-      await runner.start();
-
-      mockGetPositions.mockRejectedValueOnce(new Error('API error'));
-
-      // Should not throw
-      await runner.reconcilePositions();
-
-      await runner.stop();
-    });
+    expect(pos.state).toBe('closed');
+    expect(pos.exitReason).toBe('eod_liquidation');
+    expect(closedHandler).toHaveBeenCalledTimes(1);
+    expect(closedHandler.mock.calls[0][0].exitReason).toBe('eod_liquidation');
   });
 
-  describe('eod_liquidation state transition', () => {
-    it('position can be closed with eod_liquidation reason', () => {
-      const pm = new PositionManager({
-        accountId: 1001,
-        contractIds: new Map([['MES', 'CON.F.US.MES.H26']]),
-        symbols: ['MES'],
-        quantity: 1,
-        maxContracts: 30,
-        maxRetries: 0,
-        slBufferTicks: 0,
-      });
-
-      const alert = makeAlert({ symbol: 'MES', action: 'buy' });
-      pm.onAlert(alert, {
-        bins: [], poc: 5050, vah: 5080, val: 5020,
-        totalVolume: 100000, rangeHigh: 5100, rangeLow: 5000, barCount: 60,
-      });
-
-      const pos = pm.positions.get('MES')!;
-      pos.entryOrderId = 100;
-      pm.onOrderFill(100, 5020);
-      expect(pos.state).toBe('active');
-
-      const closedHandler = vi.fn();
-      pm.on('positionClosed', closedHandler);
-
-      pm.onClose('MES', 5030, 'eod_liquidation');
-
-      expect(pos.state).toBe('closed');
-      expect(pos.exitReason).toBe('eod_liquidation');
-      expect(closedHandler).toHaveBeenCalledTimes(1);
-      expect(closedHandler.mock.calls[0][0].exitReason).toBe('eod_liquidation');
+  it('pending_entry position is closed with eod_liquidation', () => {
+    const pm = new PositionManager({
+      accountId: 1001,
+      contractIds: new Map([['MES', 'CON.F.US.MES.H26']]),
+      symbols: ['MES'],
+      quantity: 1,
+      maxContracts: 30,
+      maxRetries: 0,
+      slBufferTicks: 0,
     });
 
-    it('pending_entry position is closed with eod_liquidation', () => {
-      const pm = new PositionManager({
-        accountId: 1001,
-        contractIds: new Map([['MES', 'CON.F.US.MES.H26']]),
-        symbols: ['MES'],
-        quantity: 1,
-        maxContracts: 30,
-        maxRetries: 0,
-        slBufferTicks: 0,
-      });
-
-      const alert = makeAlert({ symbol: 'MES', action: 'buy' });
-      pm.onAlert(alert, {
-        bins: [], poc: 5050, vah: 5080, val: 5020,
-        totalVolume: 100000, rangeHigh: 5100, rangeLow: 5000, barCount: 60,
-      });
-
-      const pos = pm.positions.get('MES')!;
-      expect(pos.state).toBe('pending_entry');
-
-      pm.onClose('MES', 0, 'eod_liquidation');
-
-      expect(pos.state).toBe('closed');
-      expect(pos.exitReason).toBe('eod_liquidation');
+    const alert = makeAlert({ symbol: 'MES', action: 'buy' });
+    pm.onAlert(alert, {
+      bins: [], poc: 5050, vah: 5080, val: 5020,
+      totalVolume: 100000, rangeHigh: 5100, rangeLow: 5000, barCount: 60,
     });
+
+    const pos = pm.positions.get('MES')!;
+    expect(pos.state).toBe('pending_entry');
+
+    pm.onClose('MES', 0, 'eod_liquidation');
+
+    expect(pos.state).toBe('closed');
+    expect(pos.exitReason).toBe('eod_liquidation');
   });
 });

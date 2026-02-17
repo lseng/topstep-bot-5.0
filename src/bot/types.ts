@@ -54,8 +54,8 @@ export interface ManagedPosition {
   unrealizedPnl: number;
   /** Last known price from market data */
   lastPrice?: number;
-  /** VPVR calculation result */
-  vpvrData: VpvrResult;
+  /** VPVR calculation result (null when VPVR bars unavailable) */
+  vpvrData: VpvrResult | null;
   /** Confirmation engine score (0-100) */
   confirmationScore?: number;
   /** Timestamp when position was created */
@@ -68,10 +68,6 @@ export interface ManagedPosition {
   exitReason?: string;
   /** Timestamp when position was closed */
   closedAt?: Date;
-  /** LLM trade analysis reasoning */
-  llmReasoning?: string;
-  /** LLM confidence score (0-1) */
-  llmConfidence?: number;
   /** Whether this position has unsaved changes */
   dirty: boolean;
   /** Current retry attempt number (0 = original entry) */
@@ -84,6 +80,8 @@ export interface ManagedPosition {
   retryEntryLevels: number[];
   /** Strategy name for this position (e.g. 'vpvr', 'scalper'). Default: 'vpvr'. */
   strategy: string;
+  /** Source table for the alert ID ('sfx_algo_alerts' | 'alerts') */
+  alertSource: string;
 }
 
 /** SFX algo levels extracted from an alert row */
@@ -131,8 +129,6 @@ export interface BotConfig {
   maxRetries: number;
   /** Fixed stop-loss buffer in ticks (default: 8) */
   slBufferTicks: number;
-  /** Interval in ms for position reconciliation polling (default: 60000). 0 = disabled. */
-  syncIntervalMs: number;
   /** Multi-account strategy configs. If set, alerts are routed by name to specific accounts. */
   accounts?: AccountStrategyConfig[];
 }
@@ -175,12 +171,12 @@ export interface TradeResult {
   highestTpHit: string | null;
   /** Confirmation engine score */
   confirmationScore?: number;
-  /** LLM reasoning text */
-  llmReasoning?: string;
   /** Retry attempt number (0 = original entry) */
   retryCount: number;
   /** Original alert ID that started this signal chain */
   originalAlertId: string;
+  /** Source table for the alert ID ('sfx_algo_alerts' | 'alerts') */
+  alertSource: string;
 }
 
 /** Tick data from SignalR quote events */

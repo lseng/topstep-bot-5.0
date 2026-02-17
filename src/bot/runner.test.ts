@@ -26,7 +26,7 @@ vi.mock('../services/topstepx/client', () => ({
   cancelOrder: vi.fn().mockResolvedValue(true),
   closePosition: vi.fn().mockResolvedValue({ success: true, orderId: 101, errorCode: 0, errorMessage: null }),
   getCurrentContractId: vi.fn().mockReturnValue('CON.F.US.EPH26'),
-  getPositions: vi.fn().mockResolvedValue([]),
+  flattenAccount: vi.fn().mockResolvedValue({ ordersCancelled: 0, positionsClosed: 0 }),
 }));
 
 vi.mock('../services/topstepx/streaming', () => ({
@@ -68,10 +68,6 @@ vi.mock('../services/confirmation/engine', () => ({
   fetchBars: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('./llm-analyzer', () => ({
-  analyzeTrade: vi.fn().mockResolvedValue(null),
-}));
-
 import { BotRunner } from './runner';
 import { authenticate } from '../services/topstepx/client';
 
@@ -87,7 +83,6 @@ const defaultConfig: BotConfig = {
   maxContracts: 30,
   maxRetries: 0,
   slBufferTicks: 0,
-  syncIntervalMs: 0,
 };
 
 describe('BotRunner', () => {
